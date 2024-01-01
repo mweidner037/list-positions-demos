@@ -88,14 +88,23 @@ export class RichTextServer {
         }
         this.list.set(msg.startPos, ...msg.chars);
         this.echo(ws, data);
+        // Because a Position is only ever set once (when it's created) and
+        // the server does no validation, the origin's optimistically-updated
+        // state is already correct: msg.startPos is set to msg.chars.
+        // If that were not true, we would need to send a message to origin
+        // telling it how to repair its optimistically-updated state.
         break;
       case "delete":
         this.list.delete(msg.pos);
         this.echo(ws, data);
+        // Because deletes are permanant and the server does no validation,
+        // the origin's optimistically-updated state is already correct.
         break;
       case "mark":
         this.marks.push(msg.mark);
         this.echo(ws, data);
+        // Because marks are permanant and the server does no validation,
+        // the origin's optimistically-updated state is already correct.
         break;
       default:
         throw new Error("Unknown message type: " + msg.type);

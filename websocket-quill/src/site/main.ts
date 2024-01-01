@@ -15,3 +15,8 @@ function welcomeListener(e: MessageEvent<string>) {
   }
 }
 ws.addEventListener("message", welcomeListener);
+
+// For this basic demo, we don't allow disconnection tests or
+// attempt to reconnect the WebSocket ever.
+// That would require buffering updates and/or logic to
+// "merge" in the Welcome state received after reconnecting.

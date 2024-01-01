@@ -1,4 +1,3 @@
-import CopyPlugin from "copy-webpack-plugin";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import * as path from "path";
 import * as webpack from "webpack";
@@ -40,10 +39,6 @@ const config: webpack.Configuration = {
     // Use src/index.html as the entry point.
     new HtmlWebpackPlugin({
       template: "./src/site/index.html",
-    }),
-    // Copy assets to the dist folder.
-    new CopyPlugin({
-      patterns: [{ from: "src/site/about.html", to: "[name][ext]" }],
     }),
   ],
 };
