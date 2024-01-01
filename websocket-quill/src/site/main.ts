@@ -1,5 +1,5 @@
 import { Message } from "../common/messages";
-import { QuillWrapper } from "./quill";
+import { QuillWrapper } from "./quill_wrapper";
 
 const wsURL = location.origin.replace(/^http/, "ws");
 const ws = new WebSocket(wsURL);

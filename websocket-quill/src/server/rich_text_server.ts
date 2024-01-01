@@ -10,6 +10,8 @@ export class RichTextServer {
   // text in a List.
   private readonly list: List<string>;
   // We don't need to inspect the formatting, so just store the marks directly.
+  // Note: these are in receipt order, *not* timestamp order.
+  // So you can't use them as a TimestampFormattingSavedState.
   private readonly marks: TimestampMark[];
 
   private clients = new Set<WebSocket>();
@@ -18,8 +20,13 @@ export class RichTextServer {
     this.list = new List();
     this.marks = [];
 
+    // Initial state: a single "\n", to match Quill's initial state.
+    this.list.insertAt(0, "\n");
+
     this.wss.on("connection", (ws) => {
-      ws.on("open", () => this.wsOpen(ws));
+      if (ws.readyState === WebSocket.OPEN) {
+        this.wsOpen(ws);
+      } else ws.on("open", () => this.wsOpen(ws));
       ws.on("message", (data) => this.wsReceive(ws, data.toString()));
       ws.on("close", () => this.wsClose(ws));
       ws.on("error", (err) => {

@@ -1,7 +1,7 @@
 import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 
 // Quill CSS.
-import { RichList, sliceFromSpan } from "list-formatting";
+import { FormattedValues, RichList, sliceFromSpan } from "list-formatting";
 import "quill/dist/quill.snow.css";
 import { Message, WelcomeMessage } from "../common/messages";
 
@@ -30,6 +30,21 @@ export class QuillWrapper {
       },
       formats: ["bold", "italic", "header", "list"],
     });
+
+    // Load initial state into richList.
+    this.richList.order.load(welcome.order);
+    this.richList.list.load(welcome.list);
+    // welcome.marks is not a saved state; add directly.
+    for (const mark of welcome.marks) this.richList.formatting.addMark(mark);
+
+    // Sync initial state to Quill.
+    this.editor.updateContents(
+      deltaFromSlices(this.richList.formattedValues())
+    );
+    // Delete Quill's own initial "\n" - the server's state already contains one.
+    this.editor.updateContents(
+      new Delta().retain(this.richList.list.length).delete(1)
+    );
 
     // Sync Quill changes to our local state and to the server.
     let ourChange = false;
@@ -119,7 +134,7 @@ export class QuillWrapper {
             this.editor.updateContents(
               new Delta()
                 .retain(startIndex)
-                .insert(msg.chars, formattingAttrToQuill(format))
+                .insert(msg.chars, formattingToQuillAttr(format))
             );
             break;
           case "delete":
@@ -142,7 +157,7 @@ export class QuillWrapper {
                   .retain(startIndex)
                   .retain(
                     endIndex - startIndex,
-                    formattingAttrToQuill({ [change.key]: change.value })
+                    formattingToQuillAttr({ [change.key]: change.value })
                   )
               );
             }
@@ -223,6 +238,17 @@ function getRelevantDeltaOperations(delta: DeltaStatic): {
   return relevantOps;
 }
 
+function deltaFromSlices(slices: FormattedValues<string>[]) {
+  let delta = new Delta();
+  for (const values of slices) {
+    delta = delta.insert(
+      values.values.join(""),
+      formattingToQuillAttr(values.format)
+    );
+  }
+  return delta;
+}
+
 /**
  * These formats are exclusive; we need to pass only one at a time to Quill or
  * the result is inconsistent.
@@ -252,7 +278,7 @@ function quillAttrToFormatting(
 /**
  * Inverse of quillAttrToFormatting, except acting on a whole object at a time.
  */
-function formattingAttrToQuill(
+function formattingToQuillAttr(
   attrs: Record<string, any>
 ): Record<string, any> {
   const ret: Record<string, any> = {};
