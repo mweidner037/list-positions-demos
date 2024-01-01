@@ -1,10 +1,15 @@
 import { TimestampMark } from "list-formatting";
-import { BunchMeta, Position } from "list-positions";
+import {
+  BunchMeta,
+  ListSavedState,
+  OrderSavedState,
+  Position,
+} from "list-positions";
 
 export type SetMessage = {
   type: "set";
-  pos: Position;
-  char: string;
+  startPos: Position;
+  chars: string;
   meta?: BunchMeta;
 };
 
@@ -18,4 +23,11 @@ export type MarkMessage = {
   mark: TimestampMark;
 };
 
-export type Message = SetMessage | DeleteMessage | MarkMessage;
+export type WelcomeMessage = {
+  type: "welcome";
+  order: OrderSavedState;
+  list: ListSavedState<string>;
+  marks: TimestampMark[];
+};
+
+export type Message = SetMessage | DeleteMessage | MarkMessage | WelcomeMessage;

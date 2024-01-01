@@ -1,11 +1,7 @@
-import { WebSocketNetworkServer } from "@collabs/ws-server";
 import express from "express";
 import path from "path";
 import { WebSocketServer } from "ws";
-
-// Simple server for running the demo on its own.
-// Start with `npm start`.
-// collabs-demos.herokuapp.com instead uses demos/apps/server.
+import { RichTextServer } from "./rich_text_server";
 
 const port = process.env.PORT || 3000;
 
@@ -16,8 +12,6 @@ const server = app.listen(port, () =>
   console.log(`Listening at http://localhost:${port}/`)
 );
 
-// Run the @collabs/ws-server with its default InMemoryDocStore.
-// In a real app, you would modify the server's code to add authentication
-// and a ServerDocStore that saves to persistent storage.
+// Run the WebSocket server.
 const wss = new WebSocketServer({ server });
-new WebSocketNetworkServer(wss);
+new RichTextServer(wss);

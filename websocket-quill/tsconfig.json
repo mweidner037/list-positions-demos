@@ -17,5 +17,5 @@
     "sourceMap": true,
     "rootDir": "src"
   },
-  "include": ["src/site", "src/common"]
+  "include": ["src/site", "src/common", "src/site/old.ts"]
 }
