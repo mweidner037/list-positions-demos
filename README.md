@@ -1,5 +1,5 @@
 # List Demos
 
-Demos using the [list-positions](https://github.com/mweidner037/list-positions) and [list-formatting](https://github.com/mweidner037/list-formatting) libraries.
+Demos using the [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme) libraries.
 
-- `websocket-quill/`: Basic collaborative rich-text editor using a WebSocket server and Quill.
+- [`websocket-quill/`](./websocket-quill#readme): Basic collaborative rich-text editor using a WebSocket server and Quill.
