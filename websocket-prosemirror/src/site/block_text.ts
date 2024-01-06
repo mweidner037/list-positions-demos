@@ -1,5 +1,14 @@
 import { TimestampFormatting } from "list-formatting";
-import { BunchMeta, List, Order, Position } from "list-positions";
+import { BunchIDs, List, Order } from "list-positions";
+import { Node, Schema } from "prosemirror-model";
+
+export const schema = new Schema({
+  nodes: {
+    doc: { content: "paragraph+" },
+    paragraph: { content: "text*" },
+    text: {},
+  },
+});
 
 /**
  * Non-text content, represented as a single element of the list.
@@ -15,51 +24,49 @@ export type Marker = {
 export class BlockText {
   readonly order: Order;
   readonly list: List<string | Marker>;
-  readonly markers: List<Marker>;
   readonly formatting: TimestampFormatting;
 
   constructor(order?: Order) {
     this.order = order ?? new Order();
     this.list = new List(this.order);
-    this.markers = new List(this.order);
     this.formatting = new TimestampFormatting(this.order);
+
+    // Initial block marker. TODO: easier way.
+    this.order.receive([
+      { parentID: BunchIDs.ROOT, offset: 1, bunchID: "INIT" },
+    ]);
+    this.list.set(
+      { bunchID: "INIT", innerIndex: 0 },
+      { type: "paragraph", attrs: {} }
+    );
   }
 
-  insertMarkerAt(
-    index: number,
-    marker: Marker
-  ): [pos: Position, createdBunch: BunchMeta | null] {
-    const [pos, createdBunch] = this.list.insertAt(index, "\n");
-    this.markers.set(pos, marker);
-    return [pos, createdBunch];
-  }
+  toProseMirror(): Node {
+    const blocks: Node[] = [];
 
-  insertMarker(
-    prevPos: Position,
-    marker: Marker
-  ): [pos: Position, createdBunch: BunchMeta | null] {
-    const [pos, createdBunch] = this.list.insert(prevPos, "\n");
-    this.markers.set(pos, marker);
-    return [pos, createdBunch];
-  }
+    let currentBlock: Marker = this.list.getAt(0) as Marker;
+    let blockStart = 1;
+    let i = 1;
 
-  setMarker(pos: Position, marker: Marker): void {
-    if (this.list.has(pos)) {
-      if (!this.markers.has(pos)) {
-        throw new Error("Not a marker: " + JSON.stringify(pos));
+    const endBlock = () => {
+      const text = (this.list.slice(blockStart, i) as string[]).join("");
+      blocks.push(schema.node("paragraph", null, [schema.text(text)]));
+    };
+
+    for (const value of this.list.values(1)) {
+      // TODO: avoid this loop by looping over markers instead?
+      if (typeof value !== "string") {
+        // Marker -> new block start.
+        endBlock();
+        // Start next block.
+        currentBlock = value;
+        blockStart = i;
       }
-    } else this.list.set(pos, "\n");
-    this.markers.set(pos, marker);
-  }
-
-  deleteMarker(pos: Position): void {
-    if (this.list.has(pos)) {
-      if (this.markers.has(pos)) {
-        this.markers.delete(pos);
-        this.list.delete(pos);
-      } else {
-        throw new Error("Not a marker: " + JSON.stringify(pos));
-      }
+      i++;
     }
+    // End final block.
+    endBlock();
+
+    return schema.node("doc", null, blocks);
   }
 }
