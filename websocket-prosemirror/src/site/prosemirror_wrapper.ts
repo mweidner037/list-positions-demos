@@ -43,7 +43,9 @@ export class ProsemirrorWrapper {
   }
 
   private currentDoc(): Node {
+    console.log(this.blockText.list.slice());
     const blocks = this.blockText.blocks();
+    console.log(blocks);
     const nodes = blocks.map((block) => {
       switch (block.marker.type) {
         case "paragraph":
@@ -60,6 +62,7 @@ export class ProsemirrorWrapper {
           );
       }
     });
+    console.log(nodes);
     return schema.node("doc", null, nodes);
   }
 }

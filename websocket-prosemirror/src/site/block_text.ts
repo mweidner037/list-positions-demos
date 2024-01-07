@@ -100,7 +100,6 @@ export class BlockText<M extends object> {
     let currentContent: (string | M)[] = [];
     let contentStartIndex = 1;
     let textStartIndex = 1;
-    // Skips initBlock.
     for (const [pos, marker] of this.markers.entries(1)) {
       // Process text content since the previous block.
       const markerIndex = this.list.indexOfPosition(pos);
@@ -126,6 +125,18 @@ export class BlockText<M extends object> {
         contentStartIndex = markerIndex + 1;
       } else currentContent.push(marker);
     }
+    // End the final block.
+    if (this.list.length !== textStartIndex) {
+      currentContent.push(
+        (this.list.slice(textStartIndex) as string[]).join("")
+      );
+    }
+    ans.push({
+      marker: currentBlock,
+      content: currentContent,
+      startIndex: contentStartIndex,
+      endIndex: this.list.length,
+    });
 
     return ans;
   }
