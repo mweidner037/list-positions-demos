@@ -8,7 +8,7 @@ const heartbeatInterval = 30000;
 export class RichTextServer {
   // To easily save and send the state to new clients, store the
   // text in a List.
-  private readonly list: List<string>;
+  private readonly list: List<string | object>;
   // We don't need to inspect the formatting, so just store the marks directly.
   // Note: these are in receipt order, *not* timestamp order.
   // So you can't use them as a TimestampFormattingSavedState.
@@ -20,8 +20,8 @@ export class RichTextServer {
     this.list = new List();
     this.marks = [];
 
-    // Initial state: a single "\n", to match Quill's initial state.
-    this.list.insertAt(0, "\n");
+    // Initial state: a single paragraph, to match Prosemirror's starting state.
+    this.list.insertAt(0, { type: "paragraph" });
 
     this.wss.on("connection", (ws) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -91,6 +91,18 @@ export class RichTextServer {
         // Because a Position is only ever set once (when it's created) and
         // the server does no validation, the origin's optimistically-updated
         // state is already correct: msg.startPos is set to msg.chars.
+        // If that were not true, we would need to send a message to origin
+        // telling it how to repair its optimistically-updated state.
+        break;
+      case "setMarker":
+        if (msg.meta) {
+          this.list.order.receive([msg.meta]);
+        }
+        this.list.set(msg.pos, msg.marker);
+        this.echo(ws, data);
+        // Because a Position is only ever set once (when it's created) and
+        // the server does no validation, the origin's optimistically-updated
+        // state is already correct: msg.pos is set to msg.marker.
         // If that were not true, we would need to send a message to origin
         // telling it how to repair its optimistically-updated state.
         break;

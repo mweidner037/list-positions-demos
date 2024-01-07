@@ -13,6 +13,13 @@ export type SetMessage = {
   meta?: BunchMeta;
 };
 
+export type SetMarkerMessage = {
+  type: "setMarker";
+  pos: Position;
+  marker: object;
+  meta?: BunchMeta;
+};
+
 export type DeleteMessage = {
   type: "delete";
   pos: Position;
@@ -26,10 +33,15 @@ export type MarkMessage = {
 export type WelcomeMessage = {
   type: "welcome";
   order: OrderSavedState;
-  list: ListSavedState<string>;
+  list: ListSavedState<string | object>;
   // Note: these are in receipt order, *not* timestamp order.
   // So you can't use them as a TimestampFormattingSavedState.
   marks: TimestampMark[];
 };
 
-export type Message = SetMessage | DeleteMessage | MarkMessage | WelcomeMessage;
+export type Message =
+  | SetMessage
+  | SetMarkerMessage
+  | DeleteMessage
+  | MarkMessage
+  | WelcomeMessage;
