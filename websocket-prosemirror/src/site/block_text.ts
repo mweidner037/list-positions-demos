@@ -31,17 +31,17 @@ export class BlockText<M extends object> {
   /** Use for reads only - update using wrapper methods on this. */
   readonly list: List<string | M>;
   /**
-   * Just the markers from list.
+   * Just the block markers from list.
    *
    * Use for reads only - update using wrapper methods on this.
    */
-  readonly markers: List<M>;
+  readonly blockMarkers: List<M>;
   readonly formatting: TimestampFormatting;
 
   constructor(private readonly isBlock: (marker: M) => boolean, order?: Order) {
     this.order = order ?? new Order();
     this.list = new List(this.order);
-    this.markers = new List(this.order);
+    this.blockMarkers = new List(this.order);
     this.formatting = new TimestampFormatting(this.order);
   }
 
@@ -50,8 +50,11 @@ export class BlockText<M extends object> {
   set(startPos: Position, ...sameBunchValues: string[]): void;
   set(startPos: Position, ...sameBunchValues: string[] | [M]): void {
     this.list.set(startPos, ...sameBunchValues);
-    if (typeof sameBunchValues[0] !== "string") {
-      this.markers.set(startPos, sameBunchValues[0]);
+    if (sameBunchValues.length === 1) {
+      const value = sameBunchValues[0];
+      if (typeof value !== "string" && this.isBlock(value)) {
+        this.blockMarkers.set(startPos, value);
+      }
     }
   }
 
@@ -59,7 +62,7 @@ export class BlockText<M extends object> {
   delete(startPos: Position, sameBunchCount: number): void;
   delete(startPos: Position, sameBunchCount?: number): void {
     this.list.delete(startPos, sameBunchCount);
-    this.markers.delete(startPos, sameBunchCount);
+    this.blockMarkers.delete(startPos, sameBunchCount);
   }
 
   insertAt(
@@ -79,8 +82,11 @@ export class BlockText<M extends object> {
     ...values: string[] | [M]
   ): [startPos: Position, createdBunch: BunchMeta | null] {
     const [startPos, createdBunch] = this.list.insertAt(index, ...values);
-    if (typeof values[0] !== "string") {
-      this.markers.set(startPos, values[0]);
+    if (values.length === 1) {
+      const value = values[0];
+      if (typeof value !== "string" && this.isBlock(value)) {
+        this.blockMarkers.set(startPos, value);
+      }
     }
     return [startPos, createdBunch];
   }
@@ -96,44 +102,33 @@ export class BlockText<M extends object> {
     }
 
     const ans: Block<M>[] = [];
-    let currentBlock = this.markers.getAt(0);
-    let currentContent: (string | M)[] = [];
+    let currentBlock = this.blockMarkers.getAt(0);
     let contentStartIndex = 1;
-    let textStartIndex = 1;
-    for (const [pos, marker] of this.markers.entries(1)) {
-      // Process text content since the previous block.
+    for (const [pos, marker] of this.blockMarkers.entries(1)) {
+      // End the current block.
       const markerIndex = this.list.indexOfPosition(pos);
-      if (markerIndex !== textStartIndex) {
-        currentContent.push(
-          (this.list.slice(textStartIndex, markerIndex) as string[]).join("")
-        );
-      }
-      textStartIndex = markerIndex + 1;
+      // TODO: handle non-block markers.
+      ans.push({
+        marker: currentBlock,
+        content: [
+          (this.list.slice(contentStartIndex, markerIndex) as string[]).join(
+            ""
+          ),
+        ],
+        startIndex: contentStartIndex,
+        endIndex: markerIndex,
+      });
+      contentStartIndex = markerIndex + 1;
 
-      // Process the marker.
-      if (this.isBlock(marker)) {
-        // End the current block.
-        ans.push({
-          marker: currentBlock,
-          content: currentContent,
-          startIndex: contentStartIndex,
-          endIndex: markerIndex,
-        });
-        // Start the next block.
-        currentBlock = marker;
-        currentContent = [];
-        contentStartIndex = markerIndex + 1;
-      } else currentContent.push(marker);
+      // Start the next block.
+      currentBlock = marker;
+      contentStartIndex = markerIndex + 1;
     }
     // End the final block.
-    if (this.list.length !== textStartIndex) {
-      currentContent.push(
-        (this.list.slice(textStartIndex) as string[]).join("")
-      );
-    }
+    // TODO: handle non-block markers.
     ans.push({
       marker: currentBlock,
-      content: currentContent,
+      content: [(this.list.slice(contentStartIndex) as string[]).join("")],
       startIndex: contentStartIndex,
       endIndex: this.list.length,
     });
@@ -144,7 +139,7 @@ export class BlockText<M extends object> {
   loadList(savedState: ListSavedState<string | M>): void {
     this.list.load(savedState);
     for (const [pos, value] of this.list.entries()) {
-      if (typeof value !== "string") this.markers.set(pos, value);
+      if (typeof value !== "string") this.blockMarkers.set(pos, value);
     }
   }
 }
