@@ -79,18 +79,18 @@ export class ProsemirrorWrapper {
   }
 
   private currentDoc(): Node {
-    console.log(this.blockText.list.slice());
     const blocks = this.blockText.blocks();
-    console.log(blocks);
     const nodes = blocks.map((block) => {
       switch (block.marker.type) {
         case "paragraph":
-          const content = block.content.map((piece) => {
-            if (typeof piece === "string") return schema.text(piece);
-            else {
+          const content: Node[] = [];
+          for (const piece of block.content) {
+            if (typeof piece === "string") {
+              if (piece.length !== 0) content.push(schema.text(piece));
+            } else {
               throw new Error("Unrecognized embed: " + JSON.stringify(piece));
             }
-          });
+          }
           return schema.node("paragraph", null, content);
         default:
           throw new Error(
@@ -98,7 +98,6 @@ export class ProsemirrorWrapper {
           );
       }
     });
-    console.log(nodes);
     return schema.node("doc", null, nodes);
   }
 
@@ -127,31 +126,33 @@ export class ProsemirrorWrapper {
           }
         }
         // Insertion
-        if (
-          step.slice.openStart === 0 &&
-          step.slice.openEnd === 0 &&
-          step.slice.content.childCount === 1
-        ) {
-          const child = step.slice.content.child(0);
-          switch (child.type.name) {
-            case "text":
-              // Simple text insertion.
-              const [startPos, createdBunch] = this.blockText.insertAt(
-                fromIndex,
-                ...child.text!
-              );
-              messages.push({
-                type: "set",
-                startPos,
-                chars: child.text!,
-                meta: createdBunch ?? undefined,
-              });
-              break;
-            default:
-              console.error("Unsupported child", child);
+        if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
+          if (step.slice.content.childCount === 0) {
+            // Nothing inserted - okay.
+          } else if (step.slice.content.childCount === 1) {
+            const child = step.slice.content.child(0);
+            switch (child.type.name) {
+              case "text":
+                // Simple text insertion.
+                const [startPos, createdBunch] = this.blockText.insertAt(
+                  fromIndex,
+                  ...child.text!
+                );
+                messages.push({
+                  type: "set",
+                  startPos,
+                  chars: child.text!,
+                  meta: createdBunch ?? undefined,
+                });
+                break;
+              default:
+                console.error("Unsupported child", child);
+            }
+          } else {
+            console.error("Unsupported slice (childCount > 1)", step.slice);
           }
         } else {
-          console.error("Unsupported slice", step.slice);
+          console.error("Unsupported slice (open)", step.slice);
         }
       } else {
         console.error("Unsupported step", step);
@@ -179,11 +180,31 @@ export class ProsemirrorWrapper {
         return this.blockText.list.indexOfPosition(markerPos);
       }
       case "paragraph": {
-        // Char resolved.index(1) in block resolved.index(0).
+        // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
+        // For insertions at the end of a text node, index(1) is one greater
+        // (possibly out-of-bounds) and textOffset is 0.
         const markerPos = this.blockText.blockMarkers.positionAt(
           resolved.index(0)
         );
-        this.blockText.list.indexOfPosition(markerPos) + resolved.index(1);
+        const pmBlock = resolved.parent;
+        if (resolved.index(1) === pmBlock.content.childCount) {
+          // End of block. Return last char index + 1.
+          if (resolved.index(0) === this.blockText.blockMarkers.length - 1) {
+            return this.blockText.list.length;
+          } else {
+            const nextBlockPos = this.blockText.blockMarkers.positionAt(
+              resolved.index(0) + 1
+            );
+            return this.blockText.list.indexOfPosition(nextBlockPos);
+          }
+        } else {
+          // TODO: case of more than one inline node.
+          return (
+            this.blockText.list.indexOfPosition(markerPos) +
+            1 +
+            resolved.textOffset
+          );
+        }
       }
       default:
         throw new Error(
@@ -220,3 +241,5 @@ export class ProsemirrorWrapper {
     }
   }
 }
+
+// TODO: collab delete bug: get left with 2 chars in other window after deleting all.
