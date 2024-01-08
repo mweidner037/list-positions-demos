@@ -7,7 +7,7 @@ import { BlockText } from "./block_text";
 import { pcBaseKeymap } from "prosemirror-commands";
 
 import { ListSavedState, Position } from "list-positions";
-import { Node } from "prosemirror-model";
+import { Fragment, Node } from "prosemirror-model";
 import { ReplaceStep } from "prosemirror-transform";
 import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, isBlock, schema } from "./schema";
@@ -126,33 +126,47 @@ export class ProsemirrorWrapper {
           }
         }
         // Insertion
-        if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
-          if (step.slice.content.childCount === 0) {
-            // Nothing inserted - okay.
-          } else if (step.slice.content.childCount === 1) {
-            const child = step.slice.content.child(0);
-            switch (child.type.name) {
-              case "text":
-                // Simple text insertion.
-                const [startPos, createdBunch] = this.blockText.insertAt(
-                  fromIndex,
-                  ...child.text!
+        const content = step.slice.content;
+        if (content.childCount !== 0) {
+          if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
+            // Insert children directly.
+            this.insertInline(fromIndex, content, messages);
+          } else if (step.slice.openStart === 1 && step.slice.openEnd === 1) {
+            // Children are series of block nodes.
+            // First's content is added to existing block; others create new
+            // blocks, with last block getting the rest of the existing block's
+            // content.
+            let insIndex = fromIndex;
+            for (let b = 0; b < content.childCount; b++) {
+              const blockChild = content.child(b);
+              if (blockChild.type.name !== "paragraph") {
+                console.error(
+                  "Warning: non-paragraph child in open slice (?)",
+                  blockChild
+                );
+              }
+              if (b !== 0) {
+                // Insert new block marker before the block's content.
+                const marker: BlockMarker = { type: blockChild.type.name };
+                const [pos, createdBunch] = this.blockText.insertAt(
+                  insIndex,
+                  marker
                 );
                 messages.push({
-                  type: "set",
-                  startPos,
-                  chars: child.text!,
+                  type: "setMarker",
+                  pos,
+                  marker,
                   meta: createdBunch ?? undefined,
                 });
-                break;
-              default:
-                console.error("Unsupported child", child);
+                insIndex++;
+              }
+              insIndex = this.insertInline(
+                insIndex,
+                blockChild.content,
+                messages
+              );
             }
-          } else {
-            console.error("Unsupported slice (childCount > 1)", step.slice);
-          }
-        } else {
-          console.error("Unsupported slice (open)", step.slice);
+          } else console.error("Unsupported open start/end", step.slice);
         }
       } else {
         console.error("Unsupported step", step);
@@ -167,6 +181,38 @@ export class ProsemirrorWrapper {
 
     // Let ProseMirror apply the tr normally.
     this.view.updateState(this.view.state.apply(tr));
+  }
+
+  /**
+   * @returns New insIndex
+   */
+  private insertInline(
+    insIndex: number,
+    content: Fragment,
+    messages: Message[]
+  ): number {
+    for (let c = 0; c < content.childCount; c++) {
+      const child = content.child(c);
+      switch (child.type.name) {
+        case "text":
+          // Simple text insertion.
+          const [startPos, createdBunch] = this.blockText.insertAt(
+            insIndex,
+            ...child.text!
+          );
+          insIndex += child.nodeSize;
+          messages.push({
+            type: "set",
+            startPos,
+            chars: child.text!,
+            meta: createdBunch ?? undefined,
+          });
+          break;
+        default:
+          console.error("Unsupported child", child);
+      }
+    }
+    return insIndex;
   }
 
   /**
