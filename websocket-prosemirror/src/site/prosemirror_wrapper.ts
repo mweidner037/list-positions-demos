@@ -61,7 +61,7 @@ export class ProsemirrorWrapper {
               // TODO: block marker case. Need to merge block w/ previous.
               console.error("Not implemented: delete block marker.");
             } else {
-              const pmPos = this.pmPosOfValue(tr.doc, msg.pos);
+              const pmPos = this.pmPos(tr.doc, msg.pos);
               this.blockText.delete(msg.pos);
               tr.delete(pmPos, pmPos + 1);
             }
@@ -169,6 +169,13 @@ export class ProsemirrorWrapper {
     this.view.updateState(this.view.state.apply(tr));
   }
 
+  /**
+   * Returns the index in blockText.list corresponding to the given ProseMirror
+   * position.
+   *
+   * If pmPos points to (the start of) a block, the index points to that block's
+   * marker.
+   */
   private textIndex(doc: Node, pmPos: number): number {
     const resolved = doc.resolve(pmPos);
     switch (resolved.parent.type.name) {
@@ -183,28 +190,23 @@ export class ProsemirrorWrapper {
         // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
         // For insertions at the end of a text node, index(1) is one greater
         // (possibly out-of-bounds) and textOffset is 0.
-        const markerPos = this.blockText.blockMarkers.positionAt(
+        const pmBlock = resolved.parent;
+        const blockPos = this.blockText.blockMarkers.positionAt(
           resolved.index(0)
         );
-        const pmBlock = resolved.parent;
-        if (resolved.index(1) === pmBlock.content.childCount) {
-          // End of block. Return last char index + 1.
-          if (resolved.index(0) === this.blockText.blockMarkers.length - 1) {
-            return this.blockText.list.length;
-          } else {
-            const nextBlockPos = this.blockText.blockMarkers.positionAt(
-              resolved.index(0) + 1
-            );
-            return this.blockText.list.indexOfPosition(nextBlockPos);
-          }
-        } else {
-          // TODO: case of more than one inline node.
-          return (
-            this.blockText.list.indexOfPosition(markerPos) +
-            1 +
-            resolved.textOffset
-          );
+        // Total size of previous inline nodes.
+        let prevInline = 0;
+        for (let c = 0; c < resolved.index(1); c++) {
+          prevInline += pmBlock.content.child(c).nodeSize;
         }
+        // Add: Block marker index, 1 to move inside block, prevInline,
+        // then offset into the (possibly out-of-bounds) actual inline node.
+        return (
+          this.blockText.list.indexOfPosition(blockPos) +
+          1 +
+          prevInline +
+          resolved.textOffset
+        );
       }
       default:
         throw new Error(
@@ -214,16 +216,20 @@ export class ProsemirrorWrapper {
   }
 
   /**
-   * Returns the ProseMirror position corresponding to the value (not block marker)
-   * at the given present Position.
+   * Returns the ProseMirror position corresponding to the given
+   * *present* Position.
+   *
+   * If pos's value is a block marker, the ProseMirror position points
+   * to the start of that block.
    */
-  private pmPosOfValue(doc: Node, pos: Position): number {
+  private pmPos(doc: Node, pos: Position): number {
     const blockIndex = this.blockText.blockMarkers.indexOfPosition(pos, "left");
     const blockPos = this.blockText.blockMarkers.positionAt(blockIndex);
+    // 0-indexed from the block marker itself. So value indices within
+    // the block are 1 less.
     const indexInBlock =
       this.blockText.list.indexOfPosition(pos) -
-      this.blockText.list.indexOfPosition(blockPos) -
-      1;
+      this.blockText.list.indexOfPosition(blockPos);
 
     // Find the total size of previous blocks.
     let blockStart = 0;
@@ -231,8 +237,7 @@ export class ProsemirrorWrapper {
       blockStart += doc.child(b).nodeSize;
     }
 
-    // Add 1 for the start of the block and the index within block.
-    return blockStart + 1 + indexInBlock;
+    return blockStart + indexInBlock;
   }
 
   private send(msg: Message) {
