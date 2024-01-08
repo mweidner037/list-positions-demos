@@ -222,7 +222,8 @@ export class ProsemirrorWrapper {
     const blockPos = this.blockText.blockMarkers.positionAt(blockIndex);
     const indexInBlock =
       this.blockText.list.indexOfPosition(pos) -
-      this.blockText.list.indexOfPosition(blockPos);
+      this.blockText.list.indexOfPosition(blockPos) -
+      1;
 
     // Find the total size of previous blocks.
     let blockStart = 0;
@@ -230,9 +231,8 @@ export class ProsemirrorWrapper {
       blockStart += doc.child(b).nodeSize;
     }
 
-    // Add 1 for the start of doc, 1 for the start of the block, and
-    // the index within block.
-    return blockStart + 2 + indexInBlock;
+    // Add 1 for the start of the block and the index within block.
+    return blockStart + 1 + indexInBlock;
   }
 
   private send(msg: Message) {
@@ -241,5 +241,3 @@ export class ProsemirrorWrapper {
     }
   }
 }
-
-// TODO: collab delete bug: get left with 2 chars in other window after deleting all.
