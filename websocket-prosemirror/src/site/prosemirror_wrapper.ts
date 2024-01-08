@@ -7,7 +7,7 @@ import { BlockText } from "./block_text";
 import { pcBaseKeymap } from "prosemirror-commands";
 
 import { ListSavedState, Position } from "list-positions";
-import { Fragment, Node } from "prosemirror-model";
+import { Fragment, Node, Slice } from "prosemirror-model";
 import { ReplaceStep } from "prosemirror-transform";
 import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, isBlock, schema } from "./schema";
@@ -41,20 +41,48 @@ export class ProsemirrorWrapper {
       tr.setMeta("ProsemirrorWrapper", true);
       const msg = JSON.parse(e.data) as Message;
       switch (msg.type) {
-        case "set":
+        case "set": {
           if (msg.meta) {
             this.blockText.order.receive([msg.meta]);
           }
           // Sets are always nontrivial.
           // Because the server enforces causal ordering, bunched values
           // are always still contiguous and have a single format.
+          const pmPos = this.pmPos(tr.doc, msg.startPos);
           this.blockText.set(msg.startPos, ...msg.chars);
-          const startIndex = this.blockText.list.indexOfPosition(msg.startPos);
           const format = this.blockText.formatting.getFormat(msg.startPos);
-          // TODO: use format.
-          tr.insertText(msg.chars, startIndex);
+          // TODO: use format. If grouped transactionally, wait until
+          // all insertWithFormat marks have been applied?
+          tr.insertText(msg.chars, pmPos);
           break;
-        case "delete":
+        }
+        case "setMarker": {
+          if (msg.meta) {
+            this.blockText.order.receive([msg.meta]);
+          }
+          // Sets are always nontrivial.
+          const pmPos = this.pmPos(tr.doc, msg.pos);
+          const marker = msg.marker as BlockMarker;
+          this.blockText.set(msg.pos, marker);
+          // In tests, tr.split did nothing, while tr.insert made 2 paragraph
+          // breaks. Instead, we mirror the tr step seen in the other direction:
+          // a ReplaceStep with open ends.
+          tr.replace(
+            pmPos,
+            undefined,
+            new Slice(
+              Fragment.fromArray([
+                // TODO: is it necessary to match previous node's type here?
+                schema.node("paragraph"),
+                schema.node(marker.type),
+              ]),
+              1,
+              1
+            )
+          );
+          break;
+        }
+        case "delete": {
           if (this.blockText.list.has(msg.pos)) {
             const value = this.blockText.list.get(msg.pos)!;
             if (typeof value !== "string" && isBlock(value)) {
@@ -67,6 +95,7 @@ export class ProsemirrorWrapper {
             }
           }
           break;
+        }
         // TODO: setMarker, mark.
         // TODO: separate message type for block deletion?
         default:
@@ -221,6 +250,8 @@ export class ProsemirrorWrapper {
    *
    * If pmPos points to (the start of) a block, the index points to that block's
    * marker.
+   *
+   * doc and this.blockText must be in sync.
    */
   private textIndex(doc: Node, pmPos: number): number {
     const resolved = doc.resolve(pmPos);
@@ -263,10 +294,16 @@ export class ProsemirrorWrapper {
 
   /**
    * Returns the ProseMirror position corresponding to the given
-   * *present* Position.
+   * Position.
    *
-   * If pos's value is a block marker, the ProseMirror position points
+   * If pos is not present, returns the ProseMirror position corresponding to
+   * where the pos would be (ignoring whether it's a block), i.e., the
+   * ProseMirror position to insert at.
+   *
+   * If pos's present value is a block marker, the ProseMirror position points
    * to the start of that block.
+   *
+   * doc and this.blockText must be in sync.
    */
   private pmPos(doc: Node, pos: Position): number {
     const blockIndex = this.blockText.blockMarkers.indexOfPosition(pos, "left");
@@ -274,7 +311,7 @@ export class ProsemirrorWrapper {
     // 0-indexed from the block marker itself. So value indices within
     // the block are 1 less.
     const indexInBlock =
-      this.blockText.list.indexOfPosition(pos) -
+      this.blockText.list.indexOfPosition(pos, "right") -
       this.blockText.list.indexOfPosition(blockPos);
 
     // Find the total size of previous blocks.
