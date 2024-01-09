@@ -8,10 +8,22 @@ import { Schema as S } from "@triplit/db";
  * For more information on schemas, see the docs: https://www.triplit.dev/docs/schemas
  */
 export const schema = {
-  counter: {
+  bunches: {
     schema: S.Schema({
+      // The bunchID.
       id: S.Id(),
-      op: S.String(),
+      parentID: S.String(),
+      offset: S.Number(),
+    }),
+  },
+  values: {
+    schema: S.Schema({
+      // Unused.
+      id: S.Id(),
+      // Foreign key @ bunches table.
+      bunchID: S.String(),
+      innerIndex: S.Number(),
+      value: S.String(),
     }),
   },
 };
