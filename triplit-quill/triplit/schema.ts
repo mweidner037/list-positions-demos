@@ -1,4 +1,4 @@
-// import { Schema as S } from '@triplit/db';
+import { Schema as S } from "@triplit/db";
 
 /**
  * Define your schema here. To use your schema, you can either:
@@ -8,11 +8,10 @@
  * For more information on schemas, see the docs: https://www.triplit.dev/docs/schemas
  */
 export const schema = {
-  // todos: {
-  //   schema: S.Schema({
-  //     id: S.Id(),
-  //     title: S.String(),
-  //     description: S.String(),
-  //   }),
-  // },
+  counter: {
+    schema: S.Schema({
+      id: S.Id(),
+      op: S.String(),
+    }),
+  },
 };
