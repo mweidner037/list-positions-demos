@@ -4,15 +4,11 @@ import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 import {
   FormattedValues,
   RichList,
+  RichListSavedState,
   TimestampMark,
   sliceFromSpan,
 } from "list-formatting";
-import {
-  BunchMeta,
-  ListSavedState,
-  OrderSavedState,
-  Position,
-} from "list-positions";
+import { BunchMeta, Position } from "list-positions";
 import "quill/dist/quill.snow.css";
 
 const Delta: typeof DeltaType = Quill.import("delta");
@@ -56,13 +52,10 @@ export class QuillWrapper {
     readonly onLocalOps: (ops: WrapperOp[]) => void,
     /**
      * Must end in "\n" to match Quill, even if otherwise empty.
+     *
+     * Okay if marks are not in compareMarks order (weaker than RichListSavedState reqs).
      */
-    initialState: {
-      order: OrderSavedState;
-      list: ListSavedState<string>;
-      /** Unlike in RichListSavedState, does not have to be in compareMarks order. */
-      marks: TimestampMark[];
-    }
+    initialState: RichListSavedState<string>
   ) {
     this.richList = new RichList({ expandRules });
 
@@ -87,7 +80,7 @@ export class QuillWrapper {
     this.richList.order.load(initialState.order);
     this.richList.list.load(initialState.list);
     // initialState.marks is not a saved state; add directly.
-    for (const mark of initialState.marks) {
+    for (const mark of initialState.formatting) {
       this.richList.formatting.addMark(mark);
     }
     if (

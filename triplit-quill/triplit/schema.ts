@@ -26,4 +26,11 @@ export const schema = {
       value: S.String(),
     }),
   },
+  marks: {
+    schema: S.Schema({
+      // Concatenation of timestamp and senderID.
+      id: S.Id(),
+      // TODO
+    }),
+  },
 };
