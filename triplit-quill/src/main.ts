@@ -19,6 +19,7 @@ client.subscribe(values, (results, info) => {
   console.log(results, info);
 });
 
+console.log("here");
 const quillWrapper = new QuillWrapper(onLocalOps, makeInitialState());
 
 function onLocalOps(ops: WrapperOp[]): void {
@@ -47,17 +48,22 @@ function onLocalOps(ops: WrapperOp[]): void {
           }
           break;
         case "delete":
+          console.log("delete op");
           const search = await tx.fetchOne(
             client
               .query("values")
               .where("bunchID", "=", op.pos.bunchID)
               .where("innerIndex", "=", op.pos.innerIndex)
-              .build()
-            // TODO: options type not working?
-            // { policy: "local-only" }
+              .build(),
+            // TODO: why type error here?
+            // @ts-ignore
+            { policy: "local-only" }
           );
           if (search !== null) {
-            await tx.delete("values", search[0]);
+            // TODO: weird types here. Appears to return the record.
+            await tx.delete("values", (search as any).id);
+          } else {
+            console.log("delete search null?");
           }
           break;
         case "mark":
