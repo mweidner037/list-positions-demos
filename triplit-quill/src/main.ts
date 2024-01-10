@@ -1,4 +1,4 @@
-import { TriplitClient } from "@triplit/client";
+import { ClientFetchResult, TriplitClient } from "@triplit/client";
 import { RichList } from "list-formatting";
 import { Order } from "list-positions";
 import { schema } from "../triplit/schema";
@@ -10,18 +10,68 @@ const client = new TriplitClient({
   token: import.meta.env.VITE_TRIPLIT_TOKEN,
 });
 
-const bunches = client.query("bunches").build();
-client.subscribe(bunches, (results, info) => {
-  console.log(results, info);
-});
-const values = client.query("values").build();
-client.subscribe(values, (results, info) => {
-  console.log(results, info);
-});
-
-console.log("here");
 const quillWrapper = new QuillWrapper(onLocalOps, makeInitialState());
 
+// Sync Triplit changes to Quill.
+// Since queries are not incremental, we diff against the previous state
+// and process changed (inserted/deleted) ids.
+
+const bunches = client.query("bunches").build();
+let lastBunchResults: ClientFetchResult<typeof bunches> = new Map();
+client.subscribe(bunches, (results) => {
+  const ops: WrapperOp[] = [];
+  for (const [id, row] of results) {
+    if (!lastBunchResults.has(id)) {
+      // Process inserted row.
+      ops.push({
+        type: "meta",
+        meta: { bunchID: row.id, parentID: row.parentID, offset: row.offset },
+      });
+    }
+  }
+  // TODO: try without clone.
+  lastBunchResults = new Map(results);
+  // TODO: are rows guaranteed to be in causal order?
+  // Since we batch the applyOps call, it's okay if not, so long as the
+  // whole table is causally consistent.
+  quillWrapper.applyOps(ops);
+});
+
+const values = client.query("values").build();
+let lastValuesResults: ClientFetchResult<typeof values> = new Map();
+client.subscribe(values, (results) => {
+  const ops: WrapperOp[] = [];
+  for (const [id, row] of results) {
+    if (!lastValuesResults.has(id)) {
+      // Process inserted row.
+      ops.push({
+        type: "set",
+        startPos: { bunchID: row.bunchID, innerIndex: row.innerIndex },
+        chars: row.value,
+      });
+    }
+  }
+  // Diff in the other direction to find deleted rows.
+  for (const [id, row] of lastValuesResults) {
+    if (!results.has(id)) {
+      // Process deleted row.
+      ops.push({
+        type: "delete",
+        pos: { bunchID: row.bunchID, innerIndex: row.innerIndex },
+      });
+    }
+  }
+  // TODO: try without clone.
+  lastValuesResults = new Map(results);
+  // TODO: Are value rows guaranteed to be updated after the bunch rows
+  // that they depend on, given that our tx does so?
+  // If not, we might get errors from missing BunchMeta dependencies.
+  quillWrapper.applyOps(ops);
+});
+
+/**
+ * Syncs Quill changes to Triplit.
+ */
 function onLocalOps(ops: WrapperOp[]): void {
   client.transact(async (tx) => {
     for (const op of ops) {

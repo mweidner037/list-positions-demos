@@ -120,6 +120,7 @@ export class QuillWrapper {
                 ...deltaOp.insert
               );
             if (createdBunch) {
+              // Push meta op first to avoid missing BunchMeta deps.
               wrapperOps.push({ type: "meta", meta: createdBunch });
             }
             wrapperOps.push({ type: "set", startPos, chars: deltaOp.insert });
@@ -202,16 +203,21 @@ export class QuillWrapper {
           case "meta":
             break;
           case "set":
-            // TODO: assumes causal ordering, so that bunched values
-            // are always still contiguous and have a single format.
-            this.richList.list.set(op.startPos, ...op.chars);
-            const startIndex = this.richList.list.indexOfPosition(op.startPos);
-            const format = this.richList.formatting.getFormat(op.startPos);
-            pendingDelta = pendingDelta.compose(
-              new Delta()
-                .retain(startIndex)
-                .insert(op.chars, formattingToQuillAttr(format))
-            );
+            // TODO: doesn't support updates, only initial sets (or redundant copies);
+            // also, assumes sets are in causal order, so the positions are still together
+            // and have the same format.
+            if (!this.richList.list.has(op.startPos)) {
+              this.richList.list.set(op.startPos, ...op.chars);
+              const startIndex = this.richList.list.indexOfPosition(
+                op.startPos
+              );
+              const format = this.richList.formatting.getFormat(op.startPos);
+              pendingDelta = pendingDelta.compose(
+                new Delta()
+                  .retain(startIndex)
+                  .insert(op.chars, formattingToQuillAttr(format))
+              );
+            }
             break;
           case "delete":
             if (this.richList.list.has(op.pos)) {
@@ -246,7 +252,9 @@ export class QuillWrapper {
         }
       }
 
-      this.editor.updateContents(pendingDelta);
+      if (pendingDelta.ops!.length !== 0) {
+        this.editor.updateContents(pendingDelta);
+      }
     } finally {
       this.ourChange = false;
     }
