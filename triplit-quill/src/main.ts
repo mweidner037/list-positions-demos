@@ -29,6 +29,7 @@ client.subscribe(bunches, (results) => {
       });
     }
   }
+  // Rows are never deleted, so need to diff those.
   // TODO: try without clone.
   lastBunchResults = new Map(results);
   // TODO: are rows guaranteed to be in causal order?
@@ -69,6 +70,41 @@ client.subscribe(values, (results) => {
   quillWrapper.applyOps(ops);
 });
 
+const marks = client.query("marks").build();
+let lastMarksResults: ClientFetchResult<typeof marks> = new Map();
+client.subscribe(marks, (results) => {
+  const ops: WrapperOp[] = [];
+  for (const [id, row] of results) {
+    if (!lastMarksResults.has(id)) {
+      // Process inserted row.
+      ops.push({
+        type: "mark",
+        mark: {
+          start: {
+            pos: { bunchID: row.startBunchID, innerIndex: row.startInnerIndex },
+            before: row.startBefore,
+          },
+          end: {
+            pos: { bunchID: row.endBunchID, innerIndex: row.endInnerIndex },
+            before: row.endBefore,
+          },
+          key: row.key,
+          value: JSON.parse(row.value),
+          creatorID: row.creatorID,
+          timestamp: row.timestamp,
+        },
+      });
+    }
+  }
+  // Rows are never deleted, so need to diff those.
+  // TODO: try without clone.
+  lastMarksResults = new Map(results);
+  // TODO: Are value rows guaranteed to be updated after the bunch rows
+  // that they depend on, given that our tx does so?
+  // If not, we might get errors from missing BunchMeta dependencies.
+  quillWrapper.applyOps(ops);
+});
+
 /**
  * Syncs Quill changes to Triplit.
  */
@@ -98,7 +134,6 @@ function onLocalOps(ops: WrapperOp[]): void {
           }
           break;
         case "delete":
-          console.log("delete op");
           const search = await tx.fetchOne(
             client
               .query("values")
@@ -117,7 +152,18 @@ function onLocalOps(ops: WrapperOp[]): void {
           }
           break;
         case "mark":
-          console.log("TODO: marks");
+          await tx.insert("marks", {
+            startBunchID: op.mark.start.pos.bunchID,
+            startInnerIndex: op.mark.start.pos.innerIndex,
+            startBefore: op.mark.start.before,
+            endBunchID: op.mark.end.pos.bunchID,
+            endInnerIndex: op.mark.end.pos.innerIndex,
+            endBefore: op.mark.end.before,
+            key: op.mark.key,
+            value: JSON.stringify(op.mark.value),
+            creatorID: op.mark.creatorID,
+            timestamp: op.mark.timestamp,
+          });
           break;
       }
     }

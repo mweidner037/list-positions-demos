@@ -28,9 +28,22 @@ export const schema = {
   },
   marks: {
     schema: S.Schema({
-      // Concatenation of timestamp and senderID.
+      // Unused.
       id: S.Id(),
-      // TODO
+      // TODO: use nested records for anchors?
+      // Foreign key @ bunches table.
+      startBunchID: S.String(),
+      startInnerIndex: S.Number(),
+      startBefore: S.Boolean(),
+      // Foreign key @ bunches table.
+      endBunchID: S.String(),
+      endInnerIndex: S.Number(),
+      endBefore: S.Boolean(),
+      key: S.String(),
+      // JSON-ified any.
+      value: S.String(),
+      creatorID: S.String(),
+      timestamp: S.Number(),
     }),
   },
 };
