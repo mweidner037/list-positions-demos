@@ -1,6 +1,6 @@
 import { ClientFetchResult, TriplitClient } from "@triplit/client";
 import { RichList } from "list-formatting";
-import { Order } from "list-positions";
+import { Order, Position } from "list-positions";
 import { schema } from "../triplit/schema";
 import { QuillWrapper, WrapperOp } from "./quill_wrapper";
 
@@ -103,6 +103,10 @@ client.subscribe(marks, (results) => {
 // Use a queue to avoid overlapping transactions (since onLocalOps is sync
 // but transactions are async).
 
+// TODO: Despite avoiding overlapping transactions and explicit fetches, I still
+// get ReadWriteConflict errors if I type/delete quickly (by holding down a
+// keyboard key). Are tx writes conflicting with subscribe's reads?
+
 let localOpsQueue: WrapperOp[] = [];
 let sendingLocalOps = false;
 function onLocalOps(ops: WrapperOp[]) {
@@ -133,6 +137,7 @@ async function sendLocalOps() {
                 op.chars.length
               )) {
                 await tx.insert("values", {
+                  id: idOfPos(pos),
                   bunchID: pos.bunchID,
                   innerIndex: pos.innerIndex,
                   value: op.chars[i],
@@ -141,29 +146,7 @@ async function sendLocalOps() {
               }
               break;
             case "delete":
-              // TODO: rapid deletes (hold down backspace) cause "delete search null"
-              // and "ReadWriteConflict" errors. Try wrapping in var to avoid duping local updates.
-              const search = await tx.fetchOne(
-                client
-                  .query("values")
-                  .where(
-                    ["bunchID", "=", op.pos.bunchID],
-                    ["innerIndex", "=", op.pos.innerIndex]
-                  )
-                  .build(),
-                // TODO: why type error here?
-                // @ts-ignore
-                { policy: "local-only" }
-              );
-              if (search !== null) {
-                // TODO: weird types here. Looks like search is the row.
-                await tx.delete("values", (search as any).id);
-              } else {
-                console.error(
-                  "fetchOne failed to find value to delete",
-                  op.pos
-                );
-              }
+              await tx.delete("values", idOfPos(op.pos));
               break;
             case "mark":
               await tx.insert("marks", {
@@ -198,4 +181,8 @@ function makeInitialState() {
   });
   richList.list.insertAt(0, "\n");
   return richList.save();
+}
+
+function idOfPos(pos: Position): string {
+  return `${pos.innerIndex},${pos.bunchID}`;
 }
