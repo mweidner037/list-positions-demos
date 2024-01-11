@@ -137,8 +137,10 @@ function onLocalOps(ops: WrapperOp[]): void {
           const search = await tx.fetchOne(
             client
               .query("values")
-              .where("bunchID", "=", op.pos.bunchID)
-              .where("innerIndex", "=", op.pos.innerIndex)
+              .where(
+                ["bunchID", "=", op.pos.bunchID],
+                ["innerIndex", "=", op.pos.innerIndex]
+              )
               .build(),
             // TODO: why type error here?
             // @ts-ignore
@@ -148,7 +150,7 @@ function onLocalOps(ops: WrapperOp[]): void {
             // TODO: weird types here. Appears to return the record.
             await tx.delete("values", (search as any).id);
           } else {
-            console.log("delete search null?");
+            console.error("delete search null?");
           }
           break;
         case "mark":
