@@ -12,7 +12,7 @@ const client = new TriplitClient({
 
 const quillWrapper = new QuillWrapper(onLocalOps, makeInitialState());
 
-// Sync Triplit changes to Quill.
+// Send Triplit changes to Quill.
 // Since queries are not incremental, we diff against the previous state
 // and process changed (inserted/deleted) ids.
 
@@ -99,73 +99,93 @@ client.subscribe(marks, (results) => {
   quillWrapper.applyOps(ops);
 });
 
-/**
- * Syncs Quill changes to Triplit.
- */
-function onLocalOps(ops: WrapperOp[]): void {
-  client.transact(async (tx) => {
-    for (const op of ops) {
-      switch (op.type) {
-        case "meta":
-          await tx.insert("bunches", {
-            id: op.meta.bunchID,
-            parentID: op.meta.parentID,
-            offset: op.meta.offset,
-          });
-          break;
-        case "set":
-          let i = 0;
-          for (const pos of Order.startPosToArray(
-            op.startPos,
-            op.chars.length
-          )) {
-            await tx.insert("values", {
-              bunchID: pos.bunchID,
-              innerIndex: pos.innerIndex,
-              value: op.chars[i],
-            });
-            i++;
+// Send Quill changes to Triplit.
+// Use a queue to avoid overlapping transactions (since onLocalOps is sync
+// but transactions are async).
+
+let localOpsQueue: WrapperOp[] = [];
+let sendingLocalOps = false;
+function onLocalOps(ops: WrapperOp[]) {
+  localOpsQueue.push(...ops);
+  if (!sendingLocalOps) void sendLocalOps();
+}
+
+async function sendLocalOps() {
+  sendingLocalOps = true;
+  try {
+    while (localOpsQueue.length !== 0) {
+      const ops = localOpsQueue;
+      localOpsQueue = [];
+      await client.transact(async (tx) => {
+        for (const op of ops) {
+          switch (op.type) {
+            case "meta":
+              await tx.insert("bunches", {
+                id: op.meta.bunchID,
+                parentID: op.meta.parentID,
+                offset: op.meta.offset,
+              });
+              break;
+            case "set":
+              let i = 0;
+              for (const pos of Order.startPosToArray(
+                op.startPos,
+                op.chars.length
+              )) {
+                await tx.insert("values", {
+                  bunchID: pos.bunchID,
+                  innerIndex: pos.innerIndex,
+                  value: op.chars[i],
+                });
+                i++;
+              }
+              break;
+            case "delete":
+              // TODO: rapid deletes (hold down backspace) cause "delete search null"
+              // and "ReadWriteConflict" errors. Try wrapping in var to avoid duping local updates.
+              const search = await tx.fetchOne(
+                client
+                  .query("values")
+                  .where(
+                    ["bunchID", "=", op.pos.bunchID],
+                    ["innerIndex", "=", op.pos.innerIndex]
+                  )
+                  .build(),
+                // TODO: why type error here?
+                // @ts-ignore
+                { policy: "local-only" }
+              );
+              if (search !== null) {
+                // TODO: weird types here. Looks like search is the row.
+                await tx.delete("values", (search as any).id);
+              } else {
+                console.error(
+                  "fetchOne failed to find value to delete",
+                  op.pos
+                );
+              }
+              break;
+            case "mark":
+              await tx.insert("marks", {
+                startBunchID: op.mark.start.pos.bunchID,
+                startInnerIndex: op.mark.start.pos.innerIndex,
+                startBefore: op.mark.start.before,
+                endBunchID: op.mark.end.pos.bunchID,
+                endInnerIndex: op.mark.end.pos.innerIndex,
+                endBefore: op.mark.end.before,
+                key: op.mark.key,
+                value: JSON.stringify(op.mark.value),
+                creatorID: op.mark.creatorID,
+                timestamp: op.mark.timestamp,
+              });
+              break;
           }
-          break;
-        case "delete":
-          // TODO: rapid deletes (hold down backspace) cause "delete search null"
-          // and "ReadWriteConflict" errors. Try wrapping in var to avoid duping local updates.
-          const search = await tx.fetchOne(
-            client
-              .query("values")
-              .where(
-                ["bunchID", "=", op.pos.bunchID],
-                ["innerIndex", "=", op.pos.innerIndex]
-              )
-              .build(),
-            // TODO: why type error here?
-            // @ts-ignore
-            { policy: "local-only" }
-          );
-          if (search !== null) {
-            // TODO: weird types here. Looks like search is the row.
-            await tx.delete("values", (search as any).id);
-          } else {
-            console.error("delete search null?");
-          }
-          break;
-        case "mark":
-          await tx.insert("marks", {
-            startBunchID: op.mark.start.pos.bunchID,
-            startInnerIndex: op.mark.start.pos.innerIndex,
-            startBefore: op.mark.start.before,
-            endBunchID: op.mark.end.pos.bunchID,
-            endInnerIndex: op.mark.end.pos.innerIndex,
-            endBefore: op.mark.end.before,
-            key: op.mark.key,
-            value: JSON.stringify(op.mark.value),
-            creatorID: op.mark.creatorID,
-            timestamp: op.mark.timestamp,
-          });
-          break;
-      }
+        }
+      });
     }
-  });
+  } finally {
+    sendingLocalOps = false;
+  }
 }
 
 /**

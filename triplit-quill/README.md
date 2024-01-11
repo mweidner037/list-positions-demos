@@ -5,12 +5,12 @@ Basic collaborative rich-text editor that synchronizes using the [Triplit](https
 The editor state is stored in a Triplit database with three tables:
 
 - `bunches` for the BunchMeta.
-- `values` for the values (characters). For simplicity, each character gets its own row; it's probably possible to instead store one row per bunch instead.
+- `values` for the values (characters). For simplicity, each character gets its own row. (It's probably possible to instead store one row per bunch instead, using an `S.Set` to track which chars are present/deleted.)
 - `marks` for the formatting marks.
 
 See `triplit/schema.ts`.
 
-Local updates are synced to the local database. When any table changes, a [subscription](https://www.triplit.dev/docs/fetching-data/subscriptions) in `src/main.ts` updates the Quill state. Since subscriptions are not incremental (they always return the whole state), we need to do some inefficient loops to figure out what changed.
+Local updates are synced to the local database. When any table changes, a [subscription](https://www.triplit.dev/docs/fetching-data/subscriptions) in `src/main.ts` updates the Quill state. Since subscriptions are not incremental (they always return the whole state), we diff against the previous state to figure out what changed.
 
 ## Setup
 
