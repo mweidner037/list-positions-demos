@@ -12,19 +12,19 @@ Code organization:
 - `src/server/`: WebSocket server.
 - `src/site/`: Quill client.
 
-## Installation
+## Setup
 
-First, install [Node.js](https://nodejs.org/). Then run `npm i`.
+Install with `npm i`.
 
 ## Commands
 
 ### `npm run dev`
 
-Build the app from `src/`, in [development mode](https://webpack.js.org/guides/development/).
+Build the site in [development mode](https://webpack.js.org/guides/development/).
 
 ### `npm run build`
 
-Build the app from `src/`, in [production mode](https://webpack.js.org/guides/production/).
+Build the site in [production mode](https://webpack.js.org/guides/production/).
 
 ### `npm start`
 

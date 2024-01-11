@@ -30,8 +30,7 @@ client.subscribe(bunches, (results) => {
     }
   }
   // Rows are never deleted, so need to diff those.
-  // TODO: try without clone.
-  lastBunchResults = new Map(results);
+  lastBunchResults = results;
   // TODO: are rows guaranteed to be in causal order?
   // Since we batch the applyOps call, it's okay if not, so long as the
   // whole table is causally consistent.
@@ -62,9 +61,8 @@ client.subscribe(values, (results) => {
       });
     }
   }
-  // TODO: try without clone.
-  lastValuesResults = new Map(results);
-  // TODO: Are value rows guaranteed to be updated after the bunch rows
+  lastValuesResults = results;
+  // TODO: Are value & mark rows guaranteed to be updated after the bunch rows
   // that they depend on, given that our tx does so?
   // If not, we might get errors from missing BunchMeta dependencies.
   quillWrapper.applyOps(ops);
@@ -97,11 +95,7 @@ client.subscribe(marks, (results) => {
     }
   }
   // Rows are never deleted, so need to diff those.
-  // TODO: try without clone.
-  lastMarksResults = new Map(results);
-  // TODO: Are value rows guaranteed to be updated after the bunch rows
-  // that they depend on, given that our tx does so?
-  // If not, we might get errors from missing BunchMeta dependencies.
+  lastMarksResults = results;
   quillWrapper.applyOps(ops);
 });
 
@@ -134,6 +128,8 @@ function onLocalOps(ops: WrapperOp[]): void {
           }
           break;
         case "delete":
+          // TODO: rapid deletes (hold down backspace) cause "delete search null"
+          // and "ReadWriteConflict" errors. Try wrapping in var to avoid duping local updates.
           const search = await tx.fetchOne(
             client
               .query("values")
@@ -147,7 +143,7 @@ function onLocalOps(ops: WrapperOp[]): void {
             { policy: "local-only" }
           );
           if (search !== null) {
-            // TODO: weird types here. Appears to return the record.
+            // TODO: weird types here. Looks like search is the row.
             await tx.delete("values", (search as any).id);
           } else {
             console.error("delete search null?");

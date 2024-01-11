@@ -206,6 +206,10 @@ export class QuillWrapper {
             // TODO: doesn't support updates, only initial sets (or redundant copies);
             // also, assumes sets are in causal order, so the positions are still together
             // and have the same format.
+            // Ideal solution would be to consider the general case, then opt
+            // list.set so that it is not much slower to call it one-by-one
+            // & post-batch the result for Quill. (What about getting the format?
+            // I guess could use slice args.)
             if (!this.richList.list.has(op.startPos)) {
               this.richList.list.set(op.startPos, ...op.chars);
               const startIndex = this.richList.list.indexOfPosition(
