@@ -19,7 +19,7 @@ export const schema = {
   values: {
     schema: S.Schema({
       // A concatenation of bunchID and innerIndex (idOfPos), so that we can
-      // delete given the Position without doing a fetch for the ID.
+      // delete a Position without doing a fetch for the ID.
       id: S.Id(),
       // Foreign key @ bunches table.
       bunchID: S.String(),

@@ -12,6 +12,8 @@ See `triplit/schema.ts`.
 
 Local updates are synced to the local database. When any table changes, a [subscription](https://www.triplit.dev/docs/fetching-data/subscriptions) in `src/main.ts` updates the Quill state. Since subscriptions are not incremental (they always return the whole state), we diff against the previous state to figure out what changed.
 
+> Note: Rapidly inserting/deleting characters (by holding down a keyboard key) currently causes some weird behaviors.
+
 ## Setup
 
 1. Install with `npm i`.
@@ -31,4 +33,4 @@ Build the app to `dist/`.
 
 ### `npm run preview`
 
-Previews the app built to `dist/`.
+Preview the app built to `dist/`.

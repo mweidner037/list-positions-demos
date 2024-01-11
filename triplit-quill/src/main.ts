@@ -15,6 +15,8 @@ const quillWrapper = new QuillWrapper(onLocalOps, makeInitialState());
 // Send Triplit changes to Quill.
 // Since queries are not incremental, we diff against the previous state
 // and process changed (inserted/deleted) ids.
+// Note that this will also capture local changes; quillWrapper will ignore
+// those as redundant.
 
 const bunches = client.query("bunches").build();
 let lastBunchResults: ClientFetchResult<typeof bunches> = new Map();
@@ -29,7 +31,7 @@ client.subscribe(bunches, (results) => {
       });
     }
   }
-  // Rows are never deleted, so need to diff those.
+  // Rows are never deleted, so no need to diff those.
   lastBunchResults = results;
   // TODO: are rows guaranteed to be in causal order?
   // Since we batch the applyOps call, it's okay if not, so long as the
@@ -94,7 +96,7 @@ client.subscribe(marks, (results) => {
       });
     }
   }
-  // Rows are never deleted, so need to diff those.
+  // Rows are never deleted, so no need to diff those.
   lastMarksResults = results;
   quillWrapper.applyOps(ops);
 });
@@ -104,7 +106,7 @@ client.subscribe(marks, (results) => {
 // but transactions are async).
 
 // TODO: Despite avoiding overlapping transactions and explicit fetches, I still
-// get ReadWriteConflict errors if I type/delete quickly (by holding down a
+// get ReadWriteConflictErrors if I type/delete quickly (by holding down a
 // keyboard key). Are tx writes conflicting with subscribe's reads?
 
 let localOpsQueue: WrapperOp[] = [];
