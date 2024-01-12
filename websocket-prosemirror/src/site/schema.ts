@@ -15,11 +15,3 @@ export const schema = new Schema({
     text: {},
   },
 });
-
-export type BlockMarker = {
-  type: string;
-};
-
-export function isBlock(marker: BlockMarker) {
-  return true;
-}

@@ -1,145 +1,96 @@
-import { TimestampFormatting } from "list-formatting";
 import {
-  BunchMeta,
-  List,
-  ListSavedState,
-  Order,
-  Position,
-} from "list-positions";
+  TimestampFormatting,
+  TimestampFormattingSavedState,
+} from "list-formatting";
+import { List, ListSavedState, Order, OrderSavedState } from "list-positions";
 
-export type Block<M extends object> = {
-  readonly marker: M;
-  /**
-   * Array of text blocks (not individual chars) and embedded markers.
-   */
-  readonly content: (string | M)[];
-  /**
-   * Content's starting index in list. Can use to get formatting.
-   */
-  readonly startIndex: number;
-  readonly endIndex: number;
+export type BlockMarker = {
+  type: string;
+  attrs?: Record<string, any>;
 };
 
-/**
- * @typeParam M Type of non-text content, represented as a single
- * object (not string) element of the list.
- * - Block starts
- * - Embedded content like images (Quill embeds, Prosemirror non-text inline nodes)
- */
-export class BlockText<M extends object> {
+export type Block = {
+  readonly marker: BlockMarker;
+  readonly startIndex: number;
+  readonly endIndex: number;
+  text: string;
+  // TODO: formatting
+};
+
+export type BlockTextSavedState = {
+  readonly order: OrderSavedState;
+  // TODO: enforce disjointness with text's bunches; one marker per bunch?
+  readonly blockMarkers: ListSavedState<BlockMarker>;
+  readonly text: ListSavedState<string>;
+  readonly formatting: TimestampFormattingSavedState;
+};
+
+export class BlockText {
   readonly order: Order;
-  /** Use for reads only - update using wrapper methods on this. */
-  readonly list: List<string | M>;
-  /**
-   * Just the block markers from list.
-   *
-   * Use for reads only - update using wrapper methods on this.
-   */
-  readonly blockMarkers: List<M>;
+  readonly blockMarkers: List<BlockMarker>;
+  readonly text: List<string>;
   readonly formatting: TimestampFormatting;
 
-  constructor(private readonly isBlock: (marker: M) => boolean, order?: Order) {
+  constructor(order?: Order) {
     this.order = order ?? new Order();
-    this.list = new List(this.order);
     this.blockMarkers = new List(this.order);
+    this.text = new List(this.order);
     this.formatting = new TimestampFormatting(this.order);
   }
 
-  set(pos: Position, value: string): void;
-  set(pos: Position, value: M): void;
-  set(startPos: Position, ...sameBunchValues: string[]): void;
-  set(startPos: Position, ...sameBunchValues: string[] | [M]): void {
-    this.list.set(startPos, ...sameBunchValues);
-    if (sameBunchValues.length === 1) {
-      const value = sameBunchValues[0];
-      if (typeof value !== "string" && this.isBlock(value)) {
-        this.blockMarkers.set(startPos, value);
-      }
-    }
-  }
+  // TODO: enforce invariant that first pos is a block.
+  // TODO: enforce invariant that text and blockMarkers use disjoint Positions.
 
-  delete(pos: Position): void;
-  delete(startPos: Position, sameBunchCount: number): void;
-  delete(startPos: Position, sameBunchCount?: number): void {
-    this.list.delete(startPos, sameBunchCount);
-    this.blockMarkers.delete(startPos, sameBunchCount);
-  }
-
-  insertAt(
-    index: number,
-    value: string
-  ): [pos: Position, createdBunch: BunchMeta | null];
-  insertAt(
-    index: number,
-    value: M
-  ): [pos: Position, createdBunch: BunchMeta | null];
-  insertAt(
-    index: number,
-    ...values: string[]
-  ): [startPos: Position, createdBunch: BunchMeta | null];
-  insertAt(
-    index: number,
-    ...values: string[] | [M]
-  ): [startPos: Position, createdBunch: BunchMeta | null] {
-    const [startPos, createdBunch] = this.list.insertAt(index, ...values);
-    if (values.length === 1) {
-      const value = values[0];
-      if (typeof value !== "string" && this.isBlock(value)) {
-        this.blockMarkers.set(startPos, value);
-      }
-    }
-    return [startPos, createdBunch];
-  }
-
-  blocks(): Block<M>[] {
-    // TODO: enforce invariant that first var is a block.
+  blocks(): Block[] {
     if (
-      this.list.length === 0 ||
-      typeof this.list.getAt(0) === "string" ||
-      !this.isBlock(this.list.getAt(0) as M)
+      this.blockMarkers.length === 0 ||
+      (this.text.length !== 0 &&
+        this.order.compare(
+          this.blockMarkers.positionAt(0),
+          this.text.positionAt(0)
+        ) >= 0)
     ) {
       throw new Error("Does not start with a block marker");
     }
 
-    const ans: Block<M>[] = [];
-    let currentBlock = this.blockMarkers.getAt(0);
-    let contentStartIndex = 1;
-    for (const [pos, marker] of this.blockMarkers.entries(1)) {
-      // End the current block.
-      const markerIndex = this.list.indexOfPosition(pos);
-      // TODO: handle non-block markers.
+    const ans: Block[] = [];
+    const allText = this.text.slice().join("");
+    for (let i = 0; i < this.blockMarkers.length; i++) {
+      const startIndex = this.text.indexOfPosition(
+        this.blockMarkers.positionAt(i),
+        "right"
+      );
+      const endIndex =
+        i === this.blockMarkers.length
+          ? this.text.length
+          : this.text.indexOfPosition(
+              this.blockMarkers.positionAt(i + 1),
+              "right"
+            );
       ans.push({
-        marker: currentBlock,
-        content: [
-          (this.list.slice(contentStartIndex, markerIndex) as string[]).join(
-            ""
-          ),
-        ],
-        startIndex: contentStartIndex,
-        endIndex: markerIndex,
+        marker: this.blockMarkers.getAt(i),
+        startIndex,
+        endIndex,
+        text: allText.slice(startIndex, endIndex),
       });
-      contentStartIndex = markerIndex + 1;
-
-      // Start the next block.
-      currentBlock = marker;
-      contentStartIndex = markerIndex + 1;
     }
-    // End the final block.
-    // TODO: handle non-block markers.
-    ans.push({
-      marker: currentBlock,
-      content: [(this.list.slice(contentStartIndex) as string[]).join("")],
-      startIndex: contentStartIndex,
-      endIndex: this.list.length,
-    });
 
     return ans;
   }
 
-  loadList(savedState: ListSavedState<string | M>): void {
-    this.list.load(savedState);
-    for (const [pos, value] of this.list.entries()) {
-      if (typeof value !== "string") this.blockMarkers.set(pos, value);
-    }
+  save(): BlockTextSavedState {
+    return {
+      order: this.order.save(),
+      blockMarkers: this.blockMarkers.save(),
+      text: this.text.save(),
+      formatting: this.formatting.save(),
+    };
+  }
+
+  load(savedState: BlockTextSavedState): void {
+    this.order.load(savedState.order);
+    this.blockMarkers.load(savedState.blockMarkers);
+    this.text.load(savedState.text);
+    this.formatting.load(savedState.formatting);
   }
 }
