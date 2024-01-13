@@ -7,13 +7,25 @@ import { BunchMeta, List, Order, Position } from "list-positions";
 import { pcBaseKeymap } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Fragment, Node, Slice } from "prosemirror-model";
-import { EditorState, Transaction } from "prosemirror-state";
+import {
+  EditorState,
+  Selection,
+  TextSelection,
+  Transaction,
+} from "prosemirror-state";
 import { ReplaceStep } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, BlockTextSavedState } from "../common/block_text";
 import { Message } from "../common/messages";
 import { schema } from "./schema";
+
+type ListSelection = {
+  // TODO: NodeSelection, AllSelection
+  type: "TextSelection";
+  anchor: Position;
+  head: Position;
+};
 
 export class ProsemirrorWrapper {
   readonly view: EditorView;
@@ -66,11 +78,13 @@ export class ProsemirrorWrapper {
   }
 
   private isInUpdate = false;
+  private storedSelection: ListSelection | null = null;
 
   update<R>(f: () => R): R {
     if (this.isInUpdate) return f();
     else {
       this.isInUpdate = true;
+      this.storedSelection = this.getSelection();
       try {
         return f();
       } finally {
@@ -232,6 +246,44 @@ export class ProsemirrorWrapper {
       : prevMarkerPos;
   }
 
+  getSelection(pmSel = this.view.state.selection): ListSelection {
+    if (pmSel instanceof TextSelection) {
+      return {
+        type: "TextSelection",
+        anchor: this.prevPos(this.posFromPM(this.view.state.doc, pmSel.anchor)),
+        head: this.prevPos(this.posFromPM(this.view.state.doc, pmSel.head)),
+      };
+    } else {
+      console.error("Unsupported selection class", pmSel);
+      // Jump to end.
+      return {
+        type: "TextSelection",
+        anchor: Order.MAX_POSITION,
+        head: Order.MAX_POSITION,
+      };
+    }
+  }
+
+  private toPmSelection(doc: Node, sel: ListSelection): Selection {
+    switch (sel.type) {
+      case "TextSelection":
+        return TextSelection.create(
+          doc,
+          this.cursorFromPos(doc, sel.anchor),
+          this.cursorFromPos(doc, sel.head)
+        );
+      default:
+        throw new Error("Unrecognized ListSelection type: " + sel.type);
+    }
+  }
+
+  setSelection(sel: ListSelection): void {
+    // TODO: simpler tr, don't replace the whole state.
+    this.update(() => {
+      this.storedSelection = sel;
+    });
+  }
+
   /**
    * Send our current BlockText state to ProseMirror.
    */
@@ -283,8 +335,10 @@ export class ProsemirrorWrapper {
     const tr = this.view.state.tr;
     tr.setMeta("ProseMirrorWrapper", true);
     tr.replace(0, tr.doc.content.size, new Slice(Fragment.from(nodes), 0, 0));
-    // TODO: restore selection; scrollIntoView?
-    // Note that we must convert it to Positions at the start of update().
+
+    tr.setSelection(this.toPmSelection(tr.doc, this.storedSelection!));
+    this.storedSelection = null;
+    // TODO: scrollIntoView like y-prosemirror?
 
     this.view.dispatch(tr);
   }
@@ -292,6 +346,12 @@ export class ProsemirrorWrapper {
   private onLocalTr(tr: Transaction) {
     if (tr.getMeta("ProseMirrorWrapper")) {
       // Our own change; pass through.
+      this.view.updateState(this.view.state.apply(tr));
+      return;
+    }
+    if (tr.steps.length === 0) {
+      // Doesn't affect content; pass through.
+      // E.g. selection only change.
       this.view.updateState(this.view.state.apply(tr));
       return;
     }
@@ -502,6 +562,39 @@ export class ProsemirrorWrapper {
         throw new Error(
           "Unrecognized parent type: " + JSON.stringify(resolved.parent)
         );
+    }
+  }
+
+  /**
+   * Returns the ProseMirror position corresponding to a cursor at the given
+   * Position (i.e., originally directly to the right of the Position's
+   * char or block marker).
+   */
+  private cursorFromPos(doc: Node, pos: Position): number {
+    // Locate the char/block that the cursor is bound to (on its left).
+    const blockIndex = this.blockMarkers.indexOfPosition(pos, "left");
+    const blockPos = this.blockMarkers.positionAt(blockIndex);
+    const textIndex = this.text.indexOfPosition(pos, "left");
+    const textPos =
+      textIndex === -1 ? Order.MIN_POSITION : this.text.positionAt(textIndex);
+
+    // +1 to enter doc, +1 to enter block.
+    let blockStartPos = 2;
+    for (let b = 0; b < blockIndex; b++) {
+      blockStartPos += doc.content.child(b).nodeSize;
+    }
+
+    if (this.order.compare(blockPos, textPos) > 0) {
+      // Bound to blockPos.
+      // Cursor is at the start of the block.
+      return blockStartPos;
+    } else {
+      // Bound to textPos.
+      // Since blockPos < textPos, the char belongs to the block at blockIndex.
+      const indexInBlock =
+        textIndex - this.text.indexOfPosition(blockPos, "right");
+      // Add 1 because the char is to the cursor's left.
+      return blockStartPos + indexInBlock + 1;
     }
   }
 
