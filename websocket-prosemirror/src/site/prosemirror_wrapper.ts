@@ -8,6 +8,7 @@ import { pcBaseKeymap } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Fragment, Node, Slice } from "prosemirror-model";
 import {
+  AllSelection,
   EditorState,
   Selection,
   TextSelection,
@@ -157,7 +158,6 @@ export class ProsemirrorWrapper {
     });
   }
 
-  // TODO: will the non-combined lists cause issues for cursors?
   /**
    * Inserts after the given Position, before the next block marker or char.
    *
@@ -246,20 +246,26 @@ export class ProsemirrorWrapper {
       : prevMarkerPos;
   }
 
-  getSelection(pmSel = this.view.state.selection): ListSelection {
+  getSelection(): ListSelection {
+    return this.toListSelection(this.view.state.doc, this.view.state.selection);
+  }
+
+  private toListSelection(doc: Node, pmSel: Selection): ListSelection {
     if (pmSel instanceof TextSelection) {
       return {
         type: "TextSelection",
-        anchor: this.prevPos(this.posFromPM(this.view.state.doc, pmSel.anchor)),
-        head: this.prevPos(this.posFromPM(this.view.state.doc, pmSel.head)),
+        // Here we find the char/blockMarker literally at that index,
+        // then move one Position left to get a left-bound cursor.
+        anchor: this.prevPos(this.posFromPM(doc, pmSel.anchor)),
+        head: this.prevPos(this.posFromPM(doc, pmSel.head)),
       };
     } else {
       console.error("Unsupported selection class", pmSel);
-      // Jump to end.
+      // Jump to beginning.
       return {
         type: "TextSelection",
-        anchor: Order.MAX_POSITION,
-        head: Order.MAX_POSITION,
+        anchor: this.blockMarkers.positionAt(0),
+        head: this.blockMarkers.positionAt(0),
       };
     }
   }
@@ -336,9 +342,11 @@ export class ProsemirrorWrapper {
     tr.setMeta("ProseMirrorWrapper", true);
     tr.replace(0, tr.doc.content.size, new Slice(Fragment.from(nodes), 0, 0));
 
-    tr.setSelection(this.toPmSelection(tr.doc, this.storedSelection!));
-    this.storedSelection = null;
-    // TODO: scrollIntoView like y-prosemirror?
+    if (this.storedSelection !== null) {
+      tr.setSelection(this.toPmSelection(tr.doc, this.storedSelection));
+      this.storedSelection = null;
+      // TODO: scrollIntoView like y-prosemirror?
+    }
 
     this.view.dispatch(tr);
   }
@@ -349,6 +357,14 @@ export class ProsemirrorWrapper {
       this.view.updateState(this.view.state.apply(tr));
       return;
     }
+
+    // Ban AllSelection, since we don't handle it
+    // (in toPmSelection and in future local trs that delete it - those
+    // use a step.from of 0 and a paragraph child).
+    if (tr.selection instanceof AllSelection) {
+      tr.setSelection(TextSelection.create(tr.doc, 1, tr.doc.nodeSize - 3));
+    }
+
     if (tr.steps.length === 0) {
       // Doesn't affect content; pass through.
       // E.g. selection only change.
@@ -468,6 +484,11 @@ export class ProsemirrorWrapper {
         }
       }
 
+      // Use tr's selection.
+      this.setSelection(this.toListSelection(tr.doc, tr.selection));
+
+      // TODO: this is dangerous as doc-dependent methods like getSelection
+      // won't work (b/c this.view.state.doc is out of sync with our state).
       this.onLocalChange(messages);
     });
     // End of update() causes changes to be synced to ProseMirror.
@@ -532,7 +553,10 @@ export class ProsemirrorWrapper {
     switch (resolved.parent.type.name) {
       case "doc": {
         // Block resolved.index(0). Return Position of its block marker.
-        return this.blockMarkers.positionAt(resolved.index(0));
+        // For a cursor at the end of the text, index(0) is out-of-bounds.
+        return resolved.index(0) === resolved.parent.childCount
+          ? Order.MAX_POSITION
+          : this.blockMarkers.positionAt(resolved.index(0));
       }
       case "paragraph": {
         // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
@@ -578,8 +602,8 @@ export class ProsemirrorWrapper {
     const textPos =
       textIndex === -1 ? Order.MIN_POSITION : this.text.positionAt(textIndex);
 
-    // +1 to enter doc, +1 to enter block.
-    let blockStartPos = 2;
+    // +1 to enter block.
+    let blockStartPos = 1;
     for (let b = 0; b < blockIndex; b++) {
       blockStartPos += doc.content.child(b).nodeSize;
     }
