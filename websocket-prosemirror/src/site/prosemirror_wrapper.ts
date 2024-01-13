@@ -81,15 +81,17 @@ export class ProsemirrorWrapper {
   }
 
   setMarker(pos: Position, marker: BlockMarker): void {
-    // TODO: assumes that marker does not already exist elsewhere, if non-redundant.
-    if (!this.blockMarkers.has(pos)) {
-      const prevBlockIndex = this.blockMarkers.indexOfPosition(pos, "left");
-      if (prevBlockIndex !== -1) {
-        // TODO: should inserting before the first block marker be allowed?
-        this.cachedBlocks.delete(this.blockMarkers.getAt(prevBlockIndex));
+    this.update(() => {
+      // TODO: assumes that marker does not already exist elsewhere, if non-redundant.
+      if (!this.blockMarkers.has(pos)) {
+        const prevBlockIndex = this.blockMarkers.indexOfPosition(pos, "left");
+        if (prevBlockIndex !== -1) {
+          // TODO: should inserting before the first block marker be allowed?
+          this.cachedBlocks.delete(this.blockMarkers.getAt(prevBlockIndex));
+        }
+        this.blockMarkers.set(pos, marker);
       }
-      this.blockMarkers.set(pos, marker);
-    }
+    });
   }
 
   delete(pos: Position): void {
@@ -157,9 +159,13 @@ export class ProsemirrorWrapper {
                     "right"
                   );
             // TODO: use formatting. Needs formattedText() slice args.
-            node = schema.node("paragraph", null, [
-              schema.text(this.text.slice(startIndex, endIndex).join("")),
-            ]);
+            const content: Node[] = [];
+            if (startIndex < endIndex) {
+              content.push(
+                schema.text(this.text.slice(startIndex, endIndex).join(""))
+              );
+            }
+            node = schema.node("paragraph", null, content);
             break;
           default:
             throw new Error(
@@ -171,16 +177,13 @@ export class ProsemirrorWrapper {
       }
     }
 
-    const doc = schema.node("doc", null, nodes);
-
-    // Replace the whole state with doc, then restore the selection.
-    // This strategy is borrowed from y-prosemirror.
-    // Note: replacing the whole state has some downsides;
-    // see https://github.com/yjs/y-prosemirror/issues/113
-    // TODO: can we instead set the state directly?
+    // Replace the whole doc content, then restore the selection.
+    // This strategy is borrowed from y-prosemirror and also mentioned
+    // by marijn: https://discuss.prosemirror.net/t/replacing-a-states-doc/634/14
+    // However, it does have downsides: https://github.com/yjs/y-prosemirror/issues/113
     const tr = this.view.state.tr;
     tr.setMeta("ProseMirrorWrapper", true);
-    tr.replace(0, tr.doc.nodeSize, new Slice(Fragment.from(doc), 0, 0));
+    tr.replace(0, tr.doc.content.size, new Slice(Fragment.from(nodes), 0, 0));
     // TODO: restore selection, unless PM does for us; scrollIntoView?
     // Note that we must convert it to Positions at the start of update().
 

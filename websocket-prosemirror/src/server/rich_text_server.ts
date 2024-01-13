@@ -19,8 +19,8 @@ export class RichTextServer {
 
   constructor(readonly wss: WebSocketServer) {
     this.order = new Order();
-    this.text = new List();
-    this.blockMarkers = new List();
+    this.text = new List(this.order);
+    this.blockMarkers = new List(this.order);
     this.marks = [];
 
     // Initial state: a single paragraph, to match Prosemirror's starting state.
