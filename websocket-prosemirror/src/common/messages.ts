@@ -1,10 +1,6 @@
 import { TimestampMark } from "list-formatting";
-import {
-  BunchMeta,
-  ListSavedState,
-  OrderSavedState,
-  Position,
-} from "list-positions";
+import { BunchMeta, Position } from "list-positions";
+import { BlockMarker, BlockTextSavedState } from "./block_text";
 
 export type SetMessage = {
   type: "set";
@@ -16,7 +12,7 @@ export type SetMessage = {
 export type SetMarkerMessage = {
   type: "setMarker";
   pos: Position;
-  marker: object;
+  marker: BlockMarker;
   meta?: BunchMeta;
 };
 
@@ -32,11 +28,7 @@ export type MarkMessage = {
 
 export type WelcomeMessage = {
   type: "welcome";
-  order: OrderSavedState;
-  list: ListSavedState<string | object>;
-  // Note: these are in receipt order, *not* timestamp order.
-  // So you can't use them as a TimestampFormattingSavedState.
-  marks: TimestampMark[];
+  savedState: BlockTextSavedState;
 };
 
 export type Message =

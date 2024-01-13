@@ -1,27 +1,30 @@
 import { TimestampMark } from "list-formatting";
-import { List } from "list-positions";
+import { List, Order } from "list-positions";
 import { WebSocket, WebSocketServer } from "ws";
+import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 
 const heartbeatInterval = 30000;
 
 export class RichTextServer {
-  // To easily save and send the state to new clients, store the
-  // text in a List.
-  private readonly list: List<string | object>;
+  // To easily save and send the state to new clients, store as Lists.
+  private readonly order: Order;
+  private readonly text: List<string>;
+  private readonly blockMarkers: List<BlockMarker>;
   // We don't need to inspect the formatting, so just store the marks directly.
-  // Note: these are in receipt order, *not* timestamp order.
-  // So you can't use them as a TimestampFormattingSavedState.
+  // TODO: store in compareMarks order so we don't have to worry about it?
   private readonly marks: TimestampMark[];
 
   private clients = new Set<WebSocket>();
 
   constructor(readonly wss: WebSocketServer) {
-    this.list = new List();
+    this.order = new Order();
+    this.text = new List();
+    this.blockMarkers = new List();
     this.marks = [];
 
     // Initial state: a single paragraph, to match Prosemirror's starting state.
-    this.list.insertAt(0, { type: "paragraph" });
+    this.blockMarkers.insertAt(0, { type: "paragraph" });
 
     this.wss.on("connection", (ws) => {
       if (ws.readyState === WebSocket.OPEN) {
@@ -57,9 +60,12 @@ export class RichTextServer {
     // Send the current state.
     this.sendMessage(ws, {
       type: "welcome",
-      order: this.list.order.save(),
-      list: this.list.save(),
-      marks: this.marks,
+      savedState: {
+        order: this.order.save(),
+        text: this.text.save(),
+        blockMarkers: this.blockMarkers.save(),
+        formatting: this.marks,
+      },
     });
 
     this.clients.add(ws);
@@ -83,10 +89,8 @@ export class RichTextServer {
     const msg = JSON.parse(data) as Message;
     switch (msg.type) {
       case "set":
-        if (msg.meta) {
-          this.list.order.receive([msg.meta]);
-        }
-        this.list.set(msg.startPos, ...msg.chars);
+        if (msg.meta) this.order.receive([msg.meta]);
+        this.text.set(msg.startPos, ...msg.chars);
         this.echo(ws, data);
         // Because a Position is only ever set once (when it's created) and
         // the server does no validation, the origin's optimistically-updated
@@ -95,10 +99,8 @@ export class RichTextServer {
         // telling it how to repair its optimistically-updated state.
         break;
       case "setMarker":
-        if (msg.meta) {
-          this.list.order.receive([msg.meta]);
-        }
-        this.list.set(msg.pos, msg.marker);
+        if (msg.meta) this.order.receive([msg.meta]);
+        this.blockMarkers.set(msg.pos, msg.marker);
         this.echo(ws, data);
         // Because a Position is only ever set once (when it's created) and
         // the server does no validation, the origin's optimistically-updated
@@ -107,7 +109,9 @@ export class RichTextServer {
         // telling it how to repair its optimistically-updated state.
         break;
       case "delete":
-        this.list.delete(msg.pos);
+        // Pos might belong to either list; try to delete from both.
+        this.text.delete(msg.pos);
+        this.blockMarkers.delete(msg.pos);
         this.echo(ws, data);
         // Because deletes are permanant and the server does no validation,
         // the origin's optimistically-updated state is already correct.

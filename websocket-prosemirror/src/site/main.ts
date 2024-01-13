@@ -9,7 +9,10 @@ function welcomeListener(e: MessageEvent<string>) {
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    new ProsemirrorWrapper(ws, msg);
+    const wrapper = new ProsemirrorWrapper(msg.savedState);
+    ws.addEventListener("message", (e: MessageEvent<string>) => {
+      onMessage(e, wrapper);
+    });
   } else {
     console.error("Received non-welcome message first: " + msg.type);
   }
@@ -20,3 +23,26 @@ ws.addEventListener("message", welcomeListener);
 // attempt to reconnect the WebSocket ever.
 // That would require buffering updates and/or logic to
 // "merge" in the Welcome state received after reconnecting.
+
+// TODO: batch delivery, wrapped in wrapper.update().
+function onMessage(e: MessageEvent<string>, wrapper: ProsemirrorWrapper): void {
+  const msg = JSON.parse(e.data) as Message;
+  switch (msg.type) {
+    case "set":
+      if (msg.meta) wrapper.order.receive([msg.meta]);
+      wrapper.set(msg.startPos, msg.chars);
+      break;
+    case "setMarker":
+      if (msg.meta) wrapper.order.receive([msg.meta]);
+      wrapper.setMarker(msg.pos, msg.marker);
+      break;
+    case "delete":
+      wrapper.delete(msg.pos);
+      break;
+    case "mark":
+      wrapper.addMark(msg.mark);
+      break;
+    default:
+      console.error("Unexpected message type:", msg.type, msg);
+  }
+}

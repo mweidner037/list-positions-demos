@@ -1,6 +1,6 @@
 # WebSocket-Prosemirror
 
-A basic collaborative rich-text editor using a WebSocket server and [Prosemirror](https://prosemirror.net/).
+A basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), a WebSocket server, and [Prosemirror](https://prosemirror.net/).
 
 When a client makes a change, a description is sent to the server in JSON format. The server echoes that change to all other connected clients. The server also updates its own copy of the rich-text state; this is sent to new clients when they load the page.
 
