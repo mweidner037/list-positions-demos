@@ -203,7 +203,7 @@ export class ProsemirrorWrapper {
         ? Order.MAX_POSITION
         : this.blockMarkers.positionAt(nextMarkerIndex);
 
-    return this.order.compare(nextTextPos, nextMarkerPos) >= 0
+    return this.order.compare(nextTextPos, nextMarkerPos) <= 0
       ? nextTextPos
       : nextMarkerPos;
   }
@@ -227,7 +227,7 @@ export class ProsemirrorWrapper {
         ? Order.MIN_POSITION
         : this.blockMarkers.positionAt(prevMarkerIndex);
 
-    return this.order.compare(prevTextPos, prevMarkerPos) <= 0
+    return this.order.compare(prevTextPos, prevMarkerPos) >= 0
       ? prevTextPos
       : prevMarkerPos;
   }
@@ -482,19 +482,20 @@ export class ProsemirrorWrapper {
         if (resolved.index(1) === pmBlock.content.childCount) {
           // Insertion is at the end of the block. Return Position of the next
           // block's marker, or Order.MAX_POSITION if there is no next block.
-          return resolved.index(0) === this.blockMarkers.length
+          return resolved.index(0) === this.blockMarkers.length - 1
             ? Order.MAX_POSITION
             : this.blockMarkers.positionAt(resolved.index(0) + 1);
         } else {
           const blockPos = this.blockMarkers.positionAt(resolved.index(0));
-          // The index of the block's first char in this.text.
-          const blockStartIndex = this.text.indexOfPosition(blockPos, "right");
-          let indexInBlock = resolved.textOffset;
+          // Start with the index of the block's first char in this.text.
+          let textIndex = this.text.indexOfPosition(blockPos, "right");
           // Add total size of previous inline nodes.
           for (let c = 0; c < resolved.index(1); c++) {
-            indexInBlock += pmBlock.content.child(c).nodeSize;
+            textIndex += pmBlock.content.child(c).nodeSize;
           }
-          return this.text.positionAt(blockStartIndex + indexInBlock);
+          // Add offset within inline node.
+          textIndex += resolved.textOffset;
+          return this.text.positionAt(textIndex);
         }
       }
       default:
