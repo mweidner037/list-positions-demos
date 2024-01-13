@@ -3,14 +3,16 @@ import {
   TimestampMark,
   sliceFromSpan,
 } from "list-formatting";
-import { List, Order, Position } from "list-positions";
+import { BunchMeta, List, Order, Position } from "list-positions";
 import { pcBaseKeymap } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Fragment, Node, Slice } from "prosemirror-model";
-import { EditorState } from "prosemirror-state";
+import { EditorState, Transaction } from "prosemirror-state";
+import { ReplaceStep } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, BlockTextSavedState } from "../common/block_text";
+import { Message } from "../common/messages";
 import { schema } from "./schema";
 
 export class ProsemirrorWrapper {
@@ -28,9 +30,18 @@ export class ProsemirrorWrapper {
 
   /**
    *
-   * @param initialState TODO: must include at least one block.
+   * @param initialState Must start with a block.
+   * @param onLocalChange Callback for when the local user changes the state
+   * (specifically, any ProseMirror tr that's not our own).
+   * Gives the collaborative messages to send.
+   * When this is called, the changes have been applied to this's state but not
+   * synced to ProseMirror; you can override the changes by performing further
+   * updates on this's state before returning.
    */
-  constructor(initialState: BlockTextSavedState) {
+  constructor(
+    initialState: BlockTextSavedState,
+    readonly onLocalChange: (msgs: Message[]) => void
+  ) {
     this.order = new Order();
     this.blockMarkers = new List(this.order);
     this.text = new List(this.order);
@@ -47,8 +58,7 @@ export class ProsemirrorWrapper {
       state: EditorState.create({ schema }),
       handleKeyDown: keydownHandler(pcBaseKeymap),
       // Sync ProseMirror changes to our local state and the server.
-      // TODO: uncomment
-      // dispatchTransaction: this.onLocalTr.bind(this),
+      dispatchTransaction: this.onLocalTr.bind(this),
     });
 
     // Send initial state to ProseMirror.
@@ -57,12 +67,12 @@ export class ProsemirrorWrapper {
 
   private isInUpdate = false;
 
-  update(f: (wrapper: this) => void): void {
-    if (this.isInUpdate) f(this);
+  update<R>(f: () => R): R {
+    if (this.isInUpdate) return f();
     else {
       this.isInUpdate = true;
       try {
-        f(this);
+        return f();
       } finally {
         this.isInUpdate = false;
         this.sync();
@@ -133,6 +143,95 @@ export class ProsemirrorWrapper {
     });
   }
 
+  // TODO: will the non-combined lists cause issues for cursors?
+  /**
+   * Inserts after the given Position, before the next block marker or char.
+   *
+   * @param prevPos Usually either a block marker or char position.
+   */
+  insert(
+    prevPos: Position,
+    chars: string
+  ): [startPos: Position, createdBunch: BunchMeta | null] {
+    return this.update(() => {
+      const [startPos, createdBunch] = this.order.createPositions(
+        prevPos,
+        this.nextPos(prevPos),
+        chars.length
+      );
+      this.set(startPos, chars);
+      return [startPos, createdBunch];
+    });
+  }
+
+  /**
+   * Inserts after the given Position, before the next block marker or char.
+   *
+   * @param prevPos Usually either a block marker or char position.
+   */
+  insertMarker(
+    prevPos: Position,
+    marker: BlockMarker
+  ): [startPos: Position, createdBunch: BunchMeta | null] {
+    return this.update(() => {
+      const [startPos, createdBunch] = this.order.createPositions(
+        prevPos,
+        this.nextPos(prevPos),
+        1
+      );
+      this.setMarker(startPos, marker);
+      return [startPos, createdBunch];
+    });
+  }
+
+  /**
+   * Returns the next Position after pos in either this.text or this.blockMarkers,
+   * or Order.MAX_POSITION if no such Position exists.
+   *
+   * Use for insertions.
+   */
+  nextPos(pos: Position): Position {
+    const nextTextIndex = this.text.indexOfPosition(pos, "left") + 1;
+    const nextTextPos =
+      nextTextIndex === this.text.length
+        ? Order.MAX_POSITION
+        : this.text.positionAt(nextTextIndex);
+
+    const nextMarkerIndex = this.blockMarkers.indexOfPosition(pos, "left") + 1;
+    const nextMarkerPos =
+      nextMarkerIndex === this.blockMarkers.length
+        ? Order.MAX_POSITION
+        : this.blockMarkers.positionAt(nextMarkerIndex);
+
+    return this.order.compare(nextTextPos, nextMarkerPos) >= 0
+      ? nextTextPos
+      : nextMarkerPos;
+  }
+
+  /**
+   * Returns the previous Position before pos in either this.text or this.blockMarkers,
+   * or Order.MIN_POSITION if no such Position exists.
+   *
+   * Use for insertions.
+   */
+  prevPos(pos: Position): Position {
+    const prevTextIndex = this.text.indexOfPosition(pos, "right") - 1;
+    const prevTextPos =
+      prevTextIndex === -1
+        ? Order.MIN_POSITION
+        : this.text.positionAt(prevTextIndex);
+
+    const prevMarkerIndex = this.blockMarkers.indexOfPosition(pos, "right") - 1;
+    const prevMarkerPos =
+      prevMarkerIndex === this.blockMarkers.length
+        ? Order.MIN_POSITION
+        : this.blockMarkers.positionAt(prevMarkerIndex);
+
+    return this.order.compare(prevTextPos, prevMarkerPos) <= 0
+      ? prevTextPos
+      : prevMarkerPos;
+  }
+
   /**
    * Send our current BlockText state to ProseMirror.
    */
@@ -184,173 +283,226 @@ export class ProsemirrorWrapper {
     const tr = this.view.state.tr;
     tr.setMeta("ProseMirrorWrapper", true);
     tr.replace(0, tr.doc.content.size, new Slice(Fragment.from(nodes), 0, 0));
-    // TODO: restore selection, unless PM does for us; scrollIntoView?
+    // TODO: restore selection; scrollIntoView?
     // Note that we must convert it to Positions at the start of update().
 
     this.view.dispatch(tr);
   }
 
-  // private onLocalTr(tr: Transaction) {
-  //   if (tr.getMeta("ProseMirrorWrapper")) {
-  //     // Our own change; pass through.
-  //     this.view.updateState(this.view.state.apply(tr));
-  //     return;
-  //   }
+  private onLocalTr(tr: Transaction) {
+    if (tr.getMeta("ProseMirrorWrapper")) {
+      // Our own change; pass through.
+      this.view.updateState(this.view.state.apply(tr));
+      return;
+    }
 
-  //   // Apply to blockText, recording messages to send to the server.
-  //   const messages: Message[] = [];
-  //   for (let s = 0; s < tr.steps.length; s++) {
-  //     const step = tr.steps[s];
-  //     if (step instanceof ReplaceStep) {
-  //       const fromIndex = this.textIndex(tr.docs[s], step.from);
-  //       // Deletion
-  //       if (step.from < step.to) {
-  //         const toDelete = this.blockText.list.positions(
-  //           fromIndex,
-  //           this.textIndex(tr.docs[s], step.to)
-  //         );
-  //         for (const pos of toDelete) {
-  //           messages.push({ type: "delete", pos });
-  //           this.blockText.delete(pos);
-  //         }
-  //       }
-  //       // Insertion
-  //       const content = step.slice.content;
-  //       if (content.childCount !== 0) {
-  //         if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
-  //           // Insert children directly.
-  //           this.insertInline(fromIndex, content, messages);
-  //         } else if (step.slice.openStart === 1 && step.slice.openEnd === 1) {
-  //           // Children are series of block nodes.
-  //           // First's content is added to existing block; others create new
-  //           // blocks, with last block getting the rest of the existing block's
-  //           // content.
-  //           let insIndex = fromIndex;
-  //           for (let b = 0; b < content.childCount; b++) {
-  //             const blockChild = content.child(b);
-  //             if (blockChild.type.name !== "paragraph") {
-  //               console.error(
-  //                 "Warning: non-paragraph child in open slice (?)",
-  //                 blockChild
-  //               );
-  //             }
-  //             if (b !== 0) {
-  //               // Insert new block marker before the block's content.
-  //               const marker: BlockMarker = { type: blockChild.type.name };
-  //               const [pos, createdBunch] = this.blockText.insertAt(
-  //                 insIndex,
-  //                 marker
-  //               );
-  //               messages.push({
-  //                 type: "setMarker",
-  //                 pos,
-  //                 marker,
-  //                 meta: createdBunch ?? undefined,
-  //               });
-  //               insIndex++;
-  //             }
-  //             insIndex = this.insertInline(
-  //               insIndex,
-  //               blockChild.content,
-  //               messages
-  //             );
-  //           }
-  //         } else console.error("Unsupported open start/end", step.slice);
-  //       }
-  //     } else {
-  //       console.error("Unsupported step", step);
-  //     }
-  //   }
+    this.update(() => {
+      // Apply to our state, recording messages for this.onLocalChange.
+      const messages: Message[] = [];
+      for (let s = 0; s < tr.steps.length; s++) {
+        const step = tr.steps[s];
+        if (step instanceof ReplaceStep) {
+          const fromPos = this.posFromPM(tr.docs[s], step.from);
+          // Tell the block before fromPos to update, since its content are about to change.
+          this.cachedBlocks.delete(
+            this.blockMarkers.getAt(
+              this.blockMarkers.indexOfPosition(fromPos, "right") - 1
+            )
+          );
 
-  //   // Tell the server.
-  //   // TODO: group as tr.
-  //   for (const message of messages) {
-  //     this.send(message);
-  //   }
+          // Deletion
+          if (step.from < step.to) {
+            const toPos = this.posFromPM(tr.docs[s], step.to);
+            // text
+            const textDelete = this.text.positions(
+              this.text.indexOfPosition(fromPos, "right"),
+              this.text.indexOfPosition(toPos, "right")
+            );
+            for (const pos of textDelete) {
+              messages.push({ type: "delete", pos });
+              this.text.delete(pos);
+            }
+            // blockMarkers
+            const blockStartIndex = this.blockMarkers.indexOfPosition(
+              fromPos,
+              "right"
+            );
+            if (blockStartIndex === 0) {
+              throw new Error("Cannot delete the first block marker");
+            }
+            const blockEndIndex = this.blockMarkers.indexOfPosition(
+              toPos,
+              "right"
+            );
+            const blockDelete = this.blockMarkers.positions(
+              blockStartIndex,
+              blockEndIndex
+            );
+            for (const pos of blockDelete) {
+              messages.push({ type: "delete", pos });
+              this.blockMarkers.delete(pos);
+            }
+            // Tell deleted blocks to update.
+            for (const blockMarker of this.blockMarkers.values(
+              blockStartIndex,
+              blockEndIndex
+            )) {
+              this.cachedBlocks.delete(blockMarker);
+            }
+          }
 
-  //   // Let ProseMirror apply the tr normally.
-  //   this.view.updateState(this.view.state.apply(tr));
-  // }
+          // Insertion
+          const content = step.slice.content;
+          if (content.childCount !== 0) {
+            const insertNextPos = fromPos;
+            let insertPrevPos = this.prevPos(insertNextPos);
+            if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
+              // Insert children directly.
+              this.insertInline(
+                insertPrevPos,
+                insertNextPos,
+                content,
+                messages
+              );
+            } else if (step.slice.openStart === 1 && step.slice.openEnd === 1) {
+              // Children are series of block nodes.
+              // First's content is added to existing block; others create new
+              // blocks, with last block getting the rest of the existing block's
+              // content.
+              for (let b = 0; b < content.childCount; b++) {
+                const blockChild = content.child(b);
+                if (blockChild.type.name !== "paragraph") {
+                  console.error(
+                    "Warning: non-paragraph child in open slice (?)",
+                    blockChild
+                  );
+                }
+                if (b !== 0) {
+                  // Insert new block marker before the block's content.
+                  const marker: BlockMarker = { type: blockChild.type.name };
+                  const [pos, createdBunch] = this.order.createPositions(
+                    insertPrevPos,
+                    insertNextPos,
+                    1
+                  );
+                  insertPrevPos = pos;
+                  this.blockMarkers.set(pos, marker);
+                  messages.push({
+                    type: "setMarker",
+                    pos,
+                    marker,
+                    meta: createdBunch ?? undefined,
+                  });
+                }
+                insertPrevPos = this.insertInline(
+                  insertPrevPos,
+                  insertNextPos,
+                  blockChild.content,
+                  messages
+                );
+              }
+            } else console.error("Unsupported open start/end", step.slice);
+          }
+        } else {
+          console.error("Unsupported step", step);
+        }
+      }
 
-  // /**
-  //  * @returns New insIndex
-  //  */
-  // private insertInline(
-  //   insIndex: number,
-  //   content: Fragment,
-  //   messages: Message[]
-  // ): number {
-  //   for (let c = 0; c < content.childCount; c++) {
-  //     const child = content.child(c);
-  //     switch (child.type.name) {
-  //       case "text":
-  //         // Simple text insertion.
-  //         const [startPos, createdBunch] = this.blockText.insertAt(
-  //           insIndex,
-  //           ...child.text!
-  //         );
-  //         insIndex += child.nodeSize;
-  //         messages.push({
-  //           type: "set",
-  //           startPos,
-  //           chars: child.text!,
-  //           meta: createdBunch ?? undefined,
-  //         });
-  //         break;
-  //       default:
-  //         console.error("Unsupported child", child);
-  //     }
-  //   }
-  //   return insIndex;
-  // }
+      this.onLocalChange(messages);
+    });
+    // End of update() causes changes to be synced to ProseMirror.
+    // Nominally, we could just pass the tr to updateState, but using our own
+    // sync() ensures that the state is exactly what we expect, and also gives
+    // a uniform data flow for local vs remote updates.
+  }
 
-  // /**
-  //  * Returns the index in blockText.list corresponding to the given ProseMirror
-  //  * position.
-  //  *
-  //  * If pmPos points to (the start of) a block, the index points to that block's
-  //  * marker.
-  //  *
-  //  * doc and this.blockText must be in sync.
-  //  */
-  // private textIndex(doc: Node, pmPos: number): number {
-  //   const resolved = doc.resolve(pmPos);
-  //   switch (resolved.parent.type.name) {
-  //     case "doc": {
-  //       // Block resolved.index(0). Return index of its block marker.
-  //       const markerPos = this.blockText.blockMarkers.positionAt(
-  //         resolved.index(0)
-  //       );
-  //       return this.blockText.list.indexOfPosition(markerPos);
-  //     }
-  //     case "paragraph": {
-  //       // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
-  //       // For insertions at the end of a text node, index(1) is one greater
-  //       // (possibly out-of-bounds) and textOffset is 0.
-  //       const pmBlock = resolved.parent;
-  //       const blockPos = this.blockText.blockMarkers.positionAt(
-  //         resolved.index(0)
-  //       );
-  //       // Total size of previous inline nodes.
-  //       let prevInline = 0;
-  //       for (let c = 0; c < resolved.index(1); c++) {
-  //         prevInline += pmBlock.content.child(c).nodeSize;
-  //       }
-  //       // Add: Block marker index, 1 to move inside block, prevInline,
-  //       // then offset into the (possibly out-of-bounds) actual inline node.
-  //       return (
-  //         this.blockText.list.indexOfPosition(blockPos) +
-  //         1 +
-  //         prevInline +
-  //         resolved.textOffset
-  //       );
-  //     }
-  //     default:
-  //       throw new Error(
-  //         "Unrecognized parent type: " + JSON.stringify(resolved.parent)
-  //       );
-  //   }
-  // }
+  /**
+   * @returns New prevPos
+   */
+  private insertInline(
+    prevPos: Position,
+    nextPos: Position,
+    content: Fragment,
+    messages: Message[]
+  ): Position {
+    for (let c = 0; c < content.childCount; c++) {
+      const child = content.child(c);
+      switch (child.type.name) {
+        case "text":
+          // Simple text insertion.
+          const [startPos, createdBunch] = this.order.createPositions(
+            prevPos,
+            nextPos,
+            child.text!.length
+          );
+          prevPos = {
+            // Last created Position.
+            bunchID: startPos.bunchID,
+            innerIndex: startPos.innerIndex + child.text!.length - 1,
+          };
+          this.text.set(startPos, ...child.text!);
+          messages.push({
+            type: "set",
+            startPos,
+            chars: child.text!,
+            meta: createdBunch ?? undefined,
+          });
+          break;
+        default:
+          console.error("Unsupported child", child);
+      }
+    }
+    return prevPos;
+  }
+
+  /**
+   * Returns the Position in this.text or this.blockMarker corresponding to
+   * the given ProseMirror position.
+   *
+   * If pmPos points to the start of a block,
+   * the Position points to that block's marker.
+   * If pmPos points to the end of a block (after its text),
+   * the Position points to the next block's marker, as expected for insertions
+   * before a Position.
+   *
+   * doc and this's state must be in sync.
+   */
+  private posFromPM(doc: Node, pmPos: number): Position {
+    const resolved = doc.resolve(pmPos);
+    switch (resolved.parent.type.name) {
+      case "doc": {
+        // Block resolved.index(0). Return Position of its block marker.
+        return this.blockMarkers.positionAt(resolved.index(0));
+      }
+      case "paragraph": {
+        // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
+        // For insertions at the end of a text node, index(1) is one greater
+        // (possibly out-of-bounds) and textOffset is 0.
+        const pmBlock = resolved.parent;
+        if (resolved.index(1) === pmBlock.content.childCount) {
+          // Insertion is at the end of the block. Return Position of the next
+          // block's marker, or Order.MAX_POSITION if there is no next block.
+          return resolved.index(0) === this.blockMarkers.length
+            ? Order.MAX_POSITION
+            : this.blockMarkers.positionAt(resolved.index(0) + 1);
+        } else {
+          const blockPos = this.blockMarkers.positionAt(resolved.index(0));
+          // The index of the block's first char in this.text.
+          const blockStartIndex = this.text.indexOfPosition(blockPos, "right");
+          let indexInBlock = resolved.textOffset;
+          // Add total size of previous inline nodes.
+          for (let c = 0; c < resolved.index(1); c++) {
+            indexInBlock += pmBlock.content.child(c).nodeSize;
+          }
+          return this.text.positionAt(blockStartIndex + indexInBlock);
+        }
+      }
+      default:
+        throw new Error(
+          "Unrecognized parent type: " + JSON.stringify(resolved.parent)
+        );
+    }
+  }
 
   save(): BlockTextSavedState {
     return {

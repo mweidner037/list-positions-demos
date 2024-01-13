@@ -9,7 +9,7 @@ function welcomeListener(e: MessageEvent<string>) {
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    const wrapper = new ProsemirrorWrapper(msg.savedState);
+    const wrapper = new ProsemirrorWrapper(msg.savedState, onLocalChange);
     ws.addEventListener("message", (e: MessageEvent<string>) => {
       onMessage(e, wrapper);
     });
@@ -23,6 +23,14 @@ ws.addEventListener("message", welcomeListener);
 // attempt to reconnect the WebSocket ever.
 // That would require buffering updates and/or logic to
 // "merge" in the Welcome state received after reconnecting.
+
+function onLocalChange(msgs: Message[]) {
+  if (ws.readyState === WebSocket.OPEN) {
+    for (const msg of msgs) {
+      ws.send(JSON.stringify(msg));
+    }
+  }
+}
 
 // TODO: batch delivery, wrapped in wrapper.update().
 function onMessage(e: MessageEvent<string>, wrapper: ProsemirrorWrapper): void {
