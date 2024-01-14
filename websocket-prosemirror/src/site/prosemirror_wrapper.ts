@@ -1,12 +1,13 @@
 import {
   TimestampFormatting,
   TimestampMark,
+  diffFormats,
   sliceFromSpan,
 } from "list-formatting";
 import { BunchMeta, List, Order, Position } from "list-positions";
-import { pcBaseKeymap } from "prosemirror-commands";
+import { pcBaseKeymap, toggleMark } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
-import { Fragment, Node, Slice } from "prosemirror-model";
+import { Fragment, Mark, Node, Slice } from "prosemirror-model";
 import {
   AllSelection,
   EditorState,
@@ -14,7 +15,11 @@ import {
   TextSelection,
   Transaction,
 } from "prosemirror-state";
-import { ReplaceStep } from "prosemirror-transform";
+import {
+  AddMarkStep,
+  RemoveMarkStep,
+  ReplaceStep,
+} from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
 import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, BlockTextSavedState } from "../common/block_text";
@@ -89,7 +94,11 @@ export class ProseMirrorWrapper {
     // Setup ProseMirror.
     this.view = new EditorView(document.querySelector("#editor"), {
       state: EditorState.create({ schema }),
-      handleKeyDown: keydownHandler(pcBaseKeymap),
+      handleKeyDown: keydownHandler({
+        ...pcBaseKeymap,
+        "Mod-i": toggleMark(schema.marks.em),
+        "Mod-b": toggleMark(schema.marks.strong),
+      }),
       // Sync ProseMirror changes to our local state and the server.
       dispatchTransaction: this.onLocalTr.bind(this),
     });
@@ -174,7 +183,8 @@ export class ProseMirrorWrapper {
           mark.end
         );
         for (const blockMarker of this.blockMarkers.values(
-          startIndex,
+          // Also include the block marker before the first change.
+          Math.max(0, startIndex - 1),
           endIndex
         )) {
           this.cachedBlocks.delete(blockMarker);
@@ -324,13 +334,18 @@ export class ProseMirrorWrapper {
                     this.blockMarkers.positionAt(b + 1),
                     "right"
                   );
-            // TODO: use formatting. Needs formattedText() slice args.
-            const content: Node[] = [];
-            if (startIndex < endIndex) {
-              content.push(
-                schema.text(this.text.slice(startIndex, endIndex).join(""))
-              );
-            }
+            const content = this.formatting
+              .formattedSlices(this.text, startIndex, endIndex)
+              .map((slice) => {
+                const marks: Mark[] = [];
+                for (const [key, value] of Object.entries(slice.format)) {
+                  marks.push(schema.mark(key));
+                }
+                return schema.text(
+                  this.text.slice(slice.startIndex, slice.endIndex).join(""),
+                  marks
+                );
+              });
             node = schema.node("paragraph", null, content);
             break;
           default:
@@ -486,6 +501,31 @@ export class ProseMirrorWrapper {
               }
             } else console.error("Unsupported open start/end", step.slice);
           }
+        } else if (
+          step instanceof AddMarkStep ||
+          step instanceof RemoveMarkStep
+        ) {
+          const fromPos = this.posFromPM(tr.docs[s], step.from);
+          const toPos = this.posFromPM(tr.docs[s], step.to);
+
+          // Tell the block before fromPos to update, since its content are about to change.
+          // Empirically, ProseMirror gives a separate step per block, so we don't have
+          // to worry about overlapped block markers.
+          this.cachedBlocks.delete(
+            this.blockMarkers.getAt(
+              this.blockMarkers.indexOfPosition(fromPos, "right") - 1
+            )
+          );
+
+          // expand = "after"
+          const mark = this.formatting.newMark(
+            { pos: fromPos, before: true },
+            { pos: toPos, before: true },
+            step.mark.type.name,
+            step instanceof AddMarkStep ? true : null
+          );
+          this.formatting.addMark(mark);
+          messages.push({ type: "mark", mark });
         } else {
           console.error("Unsupported step", step);
         }
@@ -535,6 +575,31 @@ export class ProseMirrorWrapper {
             chars: child.text!,
             meta: createdBunch ?? undefined,
           });
+
+          // Match marks.
+          // Since the text uses new Positions, it all has the same format.
+          const pmFormat: Record<string, any> = {};
+          for (const mark of child.marks) {
+            pmFormat[mark.type.name] = true;
+          }
+          const needsFormat = diffFormats(
+            this.formatting.getFormat(startPos),
+            pmFormat
+          );
+          for (const [key, value] of needsFormat) {
+            // expand = "after"
+            const mark = this.formatting.newMark(
+              { pos: startPos, before: true },
+              { pos: nextPos, before: true },
+              key,
+              value
+            );
+            this.formatting.addMark(mark);
+            messages.push({
+              type: "mark",
+              mark,
+            });
+          }
           break;
         default:
           console.error("Unsupported child", child);
