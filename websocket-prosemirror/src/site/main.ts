@@ -1,5 +1,5 @@
 import { Message } from "../common/messages";
-import { ProsemirrorWrapper } from "./prosemirror_wrapper";
+import { ProseMirrorWrapper } from "./prosemirror_wrapper";
 
 const wsURL = location.origin.replace(/^http/, "ws");
 const ws = new WebSocket(wsURL);
@@ -9,7 +9,7 @@ function welcomeListener(e: MessageEvent<string>) {
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    const wrapper = new ProsemirrorWrapper(msg.savedState, onLocalChange);
+    const wrapper = new ProseMirrorWrapper(msg.savedState, onLocalChange);
     ws.addEventListener("message", (e: MessageEvent<string>) => {
       onMessage(e, wrapper);
     });
@@ -33,7 +33,7 @@ function onLocalChange(msgs: Message[]) {
 }
 
 // TODO: batch delivery, wrapped in wrapper.update().
-function onMessage(e: MessageEvent<string>, wrapper: ProsemirrorWrapper): void {
+function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
   const msg = JSON.parse(e.data) as Message;
   switch (msg.type) {
     case "set":

@@ -21,14 +21,16 @@ import { BlockMarker, BlockTextSavedState } from "../common/block_text";
 import { Message } from "../common/messages";
 import { schema } from "./schema";
 
-type ListSelection = {
-  // TODO: NodeSelection, AllSelection
-  type: "TextSelection";
-  anchor: Position;
-  head: Position;
+const pmKey = "ProseMirrorWrapper";
+
+export type ListSelection = {
+  // We circumvent AllSelections; NodeSections appear unused.
+  readonly type: "TextSelection";
+  readonly anchor: Position;
+  readonly head: Position;
 };
 
-export class ProsemirrorWrapper {
+export class ProseMirrorWrapper {
   readonly view: EditorView;
 
   // Read only; use our mutators instead, typically inside an update() call.
@@ -36,6 +38,8 @@ export class ProsemirrorWrapper {
   readonly blockMarkers: List<BlockMarker>;
   readonly text: List<string>;
   readonly formatting: TimestampFormatting;
+
+  private selection: ListSelection;
 
   // Block markers that we've rendered and whose block hasn't changed.
   // Entries are deleted when their block changes.
@@ -65,6 +69,22 @@ export class ProsemirrorWrapper {
     this.blockMarkers.load(initialState.blockMarkers);
     this.text.load(initialState.text);
     this.formatting.load(initialState.formatting);
+    if (
+      this.blockMarkers.length === 0 ||
+      (this.text.length !== 0 &&
+        this.order.compare(
+          this.text.positionAt(0),
+          this.blockMarkers.positionAt(0)
+        ) < 0)
+    ) {
+      throw new Error("initialState does not start with a block marker");
+    }
+
+    this.selection = {
+      type: "TextSelection",
+      anchor: this.blockMarkers.positionAt(0),
+      head: this.blockMarkers.positionAt(0),
+    };
 
     // Setup ProseMirror.
     this.view = new EditorView(document.querySelector("#editor"), {
@@ -79,13 +99,11 @@ export class ProsemirrorWrapper {
   }
 
   private isInUpdate = false;
-  private storedSelection: ListSelection | null = null;
 
   update<R>(f: () => R): R {
     if (this.isInUpdate) return f();
     else {
       this.isInUpdate = true;
-      this.storedSelection = this.getSelection();
       try {
         return f();
       } finally {
@@ -97,23 +115,30 @@ export class ProsemirrorWrapper {
 
   set(startPos: Position, chars: string): void {
     this.update(() => {
+      const blockIndex = this.blockMarkers.indexOfPosition(startPos, "left");
+      if (blockIndex === -1) {
+        throw new Error("Cannot set a Position before the first block");
+      }
       // TODO: assumes usually newness / no splitting, so that chars
       // only belong to one block.
       this.text.set(startPos, ...chars);
-      const blockIndex = this.blockMarkers.indexOfPosition(startPos, "left");
       this.cachedBlocks.delete(this.blockMarkers.getAt(blockIndex));
     });
   }
 
+  /**
+   * marker notes:
+   * - Different Positions cannot share the same marker object.
+   * - Don't mutate it internally.
+   */
   setMarker(pos: Position, marker: BlockMarker): void {
     this.update(() => {
-      // TODO: assumes that marker does not already exist elsewhere, if non-redundant.
       if (!this.blockMarkers.has(pos)) {
         const prevBlockIndex = this.blockMarkers.indexOfPosition(pos, "left");
-        if (prevBlockIndex !== -1) {
-          // TODO: should inserting before the first block marker be allowed?
-          this.cachedBlocks.delete(this.blockMarkers.getAt(prevBlockIndex));
+        if (prevBlockIndex === -1) {
+          throw new Error("Cannot set a Position before the first block");
         }
+        this.cachedBlocks.delete(this.blockMarkers.getAt(prevBlockIndex));
         this.blockMarkers.set(pos, marker);
       }
     });
@@ -247,47 +272,31 @@ export class ProsemirrorWrapper {
   }
 
   getSelection(): ListSelection {
-    return this.toListSelection(this.view.state.doc, this.view.state.selection);
+    return this.selection;
   }
 
-  private toListSelection(doc: Node, pmSel: Selection): ListSelection {
-    if (pmSel instanceof TextSelection) {
-      return {
-        type: "TextSelection",
-        // Here we find the char/blockMarker literally at that index,
-        // then move one Position left to get a left-bound cursor.
-        anchor: this.prevPos(this.posFromPM(doc, pmSel.anchor)),
-        head: this.prevPos(this.posFromPM(doc, pmSel.head)),
-      };
-    } else {
-      console.error("Unsupported selection class", pmSel);
-      // Jump to beginning.
-      return {
-        type: "TextSelection",
-        anchor: this.blockMarkers.positionAt(0),
-        head: this.blockMarkers.positionAt(0),
-      };
+  /**
+   * If inside this.update, will wait to sync to ProseMirror until the
+   * end of the update. Otherwise syncs immediately.
+   */
+  setSelection(selection: ListSelection): void {
+    this.selection = selection;
+    if (!this.isInUpdate) {
+      // Sync to ProseMirror.
+      const tr = this.view.state.tr;
+      tr.setMeta(pmKey, true);
+      tr.setSelection(this.pmSelectionFromList(tr.doc, this.selection));
+      this.view.dispatch(tr);
     }
   }
 
-  private toPmSelection(doc: Node, sel: ListSelection): Selection {
-    switch (sel.type) {
-      case "TextSelection":
-        return TextSelection.create(
-          doc,
-          this.cursorFromPos(doc, sel.anchor),
-          this.cursorFromPos(doc, sel.head)
-        );
-      default:
-        throw new Error("Unrecognized ListSelection type: " + sel.type);
-    }
-  }
-
-  setSelection(sel: ListSelection): void {
-    // TODO: simpler tr, don't replace the whole state.
-    this.update(() => {
-      this.storedSelection = sel;
-    });
+  save(): BlockTextSavedState {
+    return {
+      order: this.order.save(),
+      blockMarkers: this.blockMarkers.save(),
+      text: this.text.save(),
+      formatting: this.formatting.save(),
+    };
   }
 
   /**
@@ -339,35 +348,33 @@ export class ProsemirrorWrapper {
     // by marijn: https://discuss.prosemirror.net/t/replacing-a-states-doc/634/14
     // However, it does have downsides: https://github.com/yjs/y-prosemirror/issues/113
     const tr = this.view.state.tr;
-    tr.setMeta("ProseMirrorWrapper", true);
+    tr.setMeta(pmKey, true);
     tr.replace(0, tr.doc.content.size, new Slice(Fragment.from(nodes), 0, 0));
-
-    if (this.storedSelection !== null) {
-      tr.setSelection(this.toPmSelection(tr.doc, this.storedSelection));
-      this.storedSelection = null;
-      // TODO: scrollIntoView like y-prosemirror?
-    }
+    tr.setSelection(this.pmSelectionFromList(tr.doc, this.selection));
 
     this.view.dispatch(tr);
   }
 
   private onLocalTr(tr: Transaction) {
-    if (tr.getMeta("ProseMirrorWrapper")) {
+    if (tr.getMeta(pmKey)) {
       // Our own change; pass through.
       this.view.updateState(this.view.state.apply(tr));
       return;
     }
 
-    // Ban AllSelection, since we don't handle it
-    // (in toPmSelection and in future local trs that delete it - those
-    // use a step.from of 0 and a paragraph child).
-    if (tr.selection instanceof AllSelection) {
-      tr.setSelection(TextSelection.create(tr.doc, 1, tr.doc.nodeSize - 3));
+    if (tr.selectionSet) {
+      // Ban AllSelection, since we don't handle it
+      // (in listSelectionFromPm, and in future local trs that delete it -
+      // those use a step.from of 0 and a paragraph child).
+      if (tr.selection instanceof AllSelection) {
+        tr.setSelection(TextSelection.create(tr.doc, 1, tr.doc.nodeSize - 3));
+      }
     }
 
     if (tr.steps.length === 0) {
       // Doesn't affect content; pass through.
       // E.g. selection only change.
+      this.selection = this.listSelectionFromPm(tr.doc, tr.selection);
       this.view.updateState(this.view.state.apply(tr));
       return;
     }
@@ -484,11 +491,11 @@ export class ProsemirrorWrapper {
         }
       }
 
-      // Use tr's selection.
-      this.setSelection(this.toListSelection(tr.doc, tr.selection));
+      // Set our selection to match ProseMirror's.
+      this.selection = this.listSelectionFromPm(tr.doc, tr.selection);
 
-      // TODO: this is dangerous as doc-dependent methods like getSelection
-      // won't work (b/c this.view.state.doc is out of sync with our state).
+      // Notify consumer of changes and give them a chance to alter them
+      // before sync().
       this.onLocalChange(messages);
     });
     // End of update() causes changes to be synced to ProseMirror.
@@ -622,12 +629,36 @@ export class ProsemirrorWrapper {
     }
   }
 
-  save(): BlockTextSavedState {
-    return {
-      order: this.order.save(),
-      blockMarkers: this.blockMarkers.save(),
-      text: this.text.save(),
-      formatting: this.formatting.save(),
-    };
+  private listSelectionFromPm(doc: Node, pmSel: Selection): ListSelection {
+    if (pmSel instanceof TextSelection) {
+      return {
+        type: "TextSelection",
+        // Here we find the char/blockMarker literally at that index,
+        // then move one Position left to get a left-bound cursor.
+        anchor: this.prevPos(this.posFromPM(doc, pmSel.anchor)),
+        head: this.prevPos(this.posFromPM(doc, pmSel.head)),
+      };
+    } else {
+      console.error("Unsupported selection class", pmSel);
+      // Jump to beginning.
+      return {
+        type: "TextSelection",
+        anchor: this.blockMarkers.positionAt(0),
+        head: this.blockMarkers.positionAt(0),
+      };
+    }
+  }
+
+  private pmSelectionFromList(doc: Node, sel: ListSelection): Selection {
+    switch (sel.type) {
+      case "TextSelection":
+        return TextSelection.create(
+          doc,
+          this.cursorFromPos(doc, sel.anchor),
+          this.cursorFromPos(doc, sel.head)
+        );
+      default:
+        throw new Error("Unrecognized ListSelection type: " + sel.type);
+    }
   }
 }
