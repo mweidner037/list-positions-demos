@@ -3,6 +3,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <style>
+      .ProseMirror {
+        background: white;
+        color: black;
+        background-clip: padding-box;
+        border-radius: 4px;
+        border: 2px solid rgba(0, 0, 0, 0.2);
+        padding: 0 0;
+        margin-top: 5px;
+        max-width: 720px;
+      }
+    </style>
 
     <title>WebSocket-Prosemirror</title>
   </head>
@@ -16,9 +28,13 @@
       <hr />
     </div>
 
-    <!-- Create the editor container -->
-    <div style="display: block; height: 80vh">
-      <div id="editor"></div>
+    <!-- Prevent the toolbar from stealing focus. -->
+    <div onmousedown="return false;">
+      <button id="button_paragraph">P</button>
+      <button id="button_h1">H1</button>
+      <button id="button_h2">H2</button>
     </div>
+
+    <div id="editor"></div>
   </body>
 </html>

@@ -13,6 +13,11 @@ function welcomeListener(e: MessageEvent<string>) {
     ws.addEventListener("message", (e: MessageEvent<string>) => {
       onMessage(e, wrapper);
     });
+
+    for (const type of ["paragraph", "h1", "h2"]) {
+      document.getElementById("button_" + type)!.onclick = () =>
+        setBlockType(wrapper, type);
+    }
   } else {
     console.error("Received non-welcome message first: " + msg.type);
   }
@@ -25,6 +30,10 @@ ws.addEventListener("message", welcomeListener);
 // "merge" in the Welcome state received after reconnecting.
 
 function onLocalChange(msgs: Message[]) {
+  send(msgs);
+}
+
+function send(msgs: Message[]): void {
   if (ws.readyState === WebSocket.OPEN) {
     for (const msg of msgs) {
       ws.send(JSON.stringify(msg));
@@ -53,4 +62,30 @@ function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
     default:
       console.error("Unexpected message type:", msg.type, msg);
   }
+}
+
+/**
+ * Sets the currently selected block(s) to the given type.
+ */
+function setBlockType(wrapper: ProseMirrorWrapper, type: string): void {
+  // Cursors point to the Position on their left.
+  // Affect all block markers between those immediately left (inclusive)
+  // of anchor and head.
+  const sel = wrapper.getSelection();
+  let [start, end] = [sel.anchor, sel.head];
+  if (wrapper.order.compare(start, end) > 0) [start, end] = [end, start];
+  const startBlock = wrapper.blockMarkers.indexOfPosition(start, "left");
+  const endBlock = wrapper.blockMarkers.indexOfPosition(end, "left");
+  wrapper.update(() => {
+    for (const [blockPos, existing] of wrapper.blockMarkers.entries(
+      startBlock,
+      endBlock + 1
+    )) {
+      if (existing.type !== type) {
+        const marker = { ...existing, type };
+        wrapper.setMarker(blockPos, marker);
+        send([{ type: "setMarker", pos: blockPos, marker }]);
+      }
+    }
+  });
 }

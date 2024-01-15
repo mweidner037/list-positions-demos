@@ -138,19 +138,21 @@ export class ProseMirrorWrapper {
    * marker notes:
    * - Different Positions cannot share the same marker object.
    * - Don't mutate it internally.
-   * - Don't change the value of a marker pos.
    * - Position cannot change from char <-> marker over time.
    */
   setMarker(pos: Position, marker: BlockMarker): void {
     this.update(() => {
-      if (!this.blockMarkers.has(pos)) {
-        if (this.order.compare(pos, this.blockMarkers.positionAt(0)) < 0) {
-          throw new Error("Cannot set a Position before the first block");
-        }
-        this.list.set(pos, marker);
-        this.blockMarkers.set(pos, marker);
+      if (this.order.compare(pos, this.blockMarkers.positionAt(0)) < 0) {
+        throw new Error("Cannot set a Position before the first block");
+      }
+      const had = this.blockMarkers.has(pos);
+      this.list.set(pos, marker);
+      this.blockMarkers.set(pos, marker);
+      if (!had) {
+        // Mark the previous block marker as dirty, since its block was split.
         this.markDirty(pos);
       }
+      // Else marker is a new value - automatically dirty b/c not in cache.
     });
   }
 
@@ -313,6 +315,8 @@ export class ProseMirrorWrapper {
         let node: Node;
         switch (blockMarker.type) {
           case "paragraph":
+          case "h1":
+          case "h2":
             const textStart =
               this.list.indexOfPosition(
                 this.blockMarkers.positionAt(b),
@@ -338,7 +342,7 @@ export class ProseMirrorWrapper {
                   marks
                 );
               });
-            node = schema.node("paragraph", null, content);
+            node = schema.node(blockMarker.type, null, content);
             break;
           default:
             throw new Error(
@@ -372,7 +376,7 @@ export class ProseMirrorWrapper {
     if (tr.selectionSet) {
       // Ban AllSelection, since we don't handle it
       // (in listSelectionFromPm, and in future local trs that delete it -
-      // those use a step.from of 0 and a paragraph child).
+      // those use a step.from of 0 and a block child).
       if (tr.selection instanceof AllSelection) {
         tr.setSelection(TextSelection.create(tr.doc, 1, tr.doc.nodeSize - 3));
       }
@@ -425,12 +429,6 @@ export class ProseMirrorWrapper {
               let insIndex = fromIndex;
               for (let b = 0; b < content.childCount; b++) {
                 const blockChild = content.child(b);
-                if (blockChild.type.name !== "paragraph") {
-                  console.error(
-                    "Warning: non-paragraph child in open slice (?)",
-                    blockChild
-                  );
-                }
                 if (b !== 0) {
                   // Insert new block marker before the block's content.
                   const marker: BlockMarker = { type: blockChild.type.name };
@@ -589,7 +587,9 @@ export class ProseMirrorWrapper {
               this.blockMarkers.positionAt(resolved.index(0))
             );
       }
-      case "paragraph": {
+      case "paragraph":
+      case "h1":
+      case "h2": {
         // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
         // For insertions at the end of a text node, index(1) is one greater
         // (possibly out-of-bounds) and textOffset is 0.

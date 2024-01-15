@@ -1,18 +1,39 @@
 import { DOMOutputSpec, MarkSpec, Schema } from "prosemirror-model";
 
 const pDOM: DOMOutputSpec = ["p", 0];
+const h1DOM: DOMOutputSpec = ["h1", 0];
+const h2DOM: DOMOutputSpec = ["h2", 0];
 const emDOM: DOMOutputSpec = ["em", 0];
 const strongDOM: DOMOutputSpec = ["strong", 0];
 
 export const schema = new Schema({
   nodes: {
-    doc: { content: "paragraph+" },
+    doc: { content: "block+" },
     paragraph: {
+      group: "block",
       content: "text*",
       marks: "_",
       parseDOM: [{ tag: "p" }],
       toDOM() {
         return pDOM;
+      },
+    },
+    h1: {
+      group: "block",
+      content: "text*",
+      marks: "_",
+      parseDOM: [{ tag: "h1" }],
+      toDOM() {
+        return h1DOM;
+      },
+    },
+    h2: {
+      group: "block",
+      content: "text*",
+      marks: "_",
+      parseDOM: [{ tag: "h2" }],
+      toDOM() {
+        return h2DOM;
       },
     },
     text: {},
