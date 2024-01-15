@@ -312,43 +312,29 @@ export class ProseMirrorWrapper {
       if (cached !== undefined) {
         nodes.push(cached);
       } else {
-        let node: Node;
-        switch (blockMarker.type) {
-          case "paragraph":
-          case "h1":
-          case "h2":
-            const textStart =
-              this.list.indexOfPosition(
-                this.blockMarkers.positionAt(b),
-                "right"
-              ) + 1;
-            const textEnd =
-              b === this.blockMarkers.length - 1
-                ? this.list.length
-                : this.list.indexOfPosition(
-                    this.blockMarkers.positionAt(b + 1)
-                  );
-            const content = this.formatting
-              .formattedSlices(this.list, textStart, textEnd)
-              .map((slice) => {
-                const marks: Mark[] = [];
-                for (const [key, value] of Object.entries(slice.format)) {
-                  marks.push(schema.mark(key));
-                }
-                return schema.text(
-                  // Since we apply formattedSlices to the text in a single block,
-                  // these values are all chars.
-                  this.list.slice(slice.startIndex, slice.endIndex).join(""),
-                  marks
-                );
-              });
-            node = schema.node(blockMarker.type, null, content);
-            break;
-          default:
-            throw new Error(
-              "Unsupported block marker: " + JSON.stringify(blockMarker)
+        const textStart =
+          this.list.indexOfPosition(this.blockMarkers.positionAt(b), "right") +
+          1;
+        const textEnd =
+          b === this.blockMarkers.length - 1
+            ? this.list.length
+            : this.list.indexOfPosition(this.blockMarkers.positionAt(b + 1));
+        const content = this.formatting
+          .formattedSlices(this.list, textStart, textEnd)
+          .map((slice) => {
+            const marks: Mark[] = [];
+            for (const [key, value] of Object.entries(slice.format)) {
+              marks.push(schema.mark(key));
+            }
+            return schema.text(
+              // Since we apply formattedSlices to the text in a single block,
+              // these values are all chars.
+              this.list.slice(slice.startIndex, slice.endIndex).join(""),
+              marks
             );
-        }
+          });
+        const node = schema.node(blockMarker.type, null, content);
+
         nodes.push(node);
         this.cachedBlocks.set(blockMarker, node);
       }
@@ -481,6 +467,7 @@ export class ProseMirrorWrapper {
           );
         } else {
           console.error("Unsupported step", step);
+          // TODO: Saw ReplaceAroundStep once, but not sure how it arised.
         }
       }
 
@@ -577,48 +564,43 @@ export class ProseMirrorWrapper {
    */
   private indexOfPmPos(doc: Node, pmPos: number): number {
     const resolved = doc.resolve(pmPos);
-    switch (resolved.parent.type.name) {
-      case "doc": {
-        // Block resolved.index(0). Return index of its block marker.
-        // For a cursor at the end of the text, index(0) is out-of-bounds.
-        return resolved.index(0) === resolved.parent.childCount
+    if (resolved.parent.type.name === "doc") {
+      // Block resolved.index(0). Return index of its block marker.
+      // For a cursor at the end of the text, index(0) is out-of-bounds.
+      return resolved.index(0) === resolved.parent.childCount
+        ? this.list.length
+        : this.list.indexOfPosition(
+            this.blockMarkers.positionAt(resolved.index(0))
+          );
+    } else if (resolved.parent.type.spec.group === "block") {
+      // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
+      // For insertions at the end of a text node, index(1) is one greater
+      // (possibly out-of-bounds) and textOffset is 0.
+      const pmBlock = resolved.parent;
+      if (resolved.index(1) === pmBlock.content.childCount) {
+        // Insertion is at the end of the block. Return Position of the next
+        // block's marker, or length if there is no next block.
+        return resolved.index(0) === this.blockMarkers.length - 1
           ? this.list.length
           : this.list.indexOfPosition(
-              this.blockMarkers.positionAt(resolved.index(0))
+              this.blockMarkers.positionAt(resolved.index(0) + 1)
             );
-      }
-      case "paragraph":
-      case "h1":
-      case "h2": {
-        // Block resolved.index(0), inline node resolved.index(1), char resolved.textOffset.
-        // For insertions at the end of a text node, index(1) is one greater
-        // (possibly out-of-bounds) and textOffset is 0.
-        const pmBlock = resolved.parent;
-        if (resolved.index(1) === pmBlock.content.childCount) {
-          // Insertion is at the end of the block. Return Position of the next
-          // block's marker, or length if there is no next block.
-          return resolved.index(0) === this.blockMarkers.length - 1
-            ? this.list.length
-            : this.list.indexOfPosition(
-                this.blockMarkers.positionAt(resolved.index(0) + 1)
-              );
-        } else {
-          const blockPos = this.blockMarkers.positionAt(resolved.index(0));
-          // Start with the index of the block's first char in this.list.
-          let listIndex = this.list.indexOfPosition(blockPos) + 1;
-          // Add total size of previous inline nodes.
-          for (let c = 0; c < resolved.index(1); c++) {
-            listIndex += pmBlock.content.child(c).nodeSize;
-          }
-          // Add offset within inline node.
-          listIndex += resolved.textOffset;
-          return listIndex;
+      } else {
+        const blockPos = this.blockMarkers.positionAt(resolved.index(0));
+        // Start with the index of the block's first char in this.list.
+        let listIndex = this.list.indexOfPosition(blockPos) + 1;
+        // Add total size of previous inline nodes.
+        for (let c = 0; c < resolved.index(1); c++) {
+          listIndex += pmBlock.content.child(c).nodeSize;
         }
+        // Add offset within inline node.
+        listIndex += resolved.textOffset;
+        return listIndex;
       }
-      default:
-        throw new Error(
-          "Unrecognized parent type: " + JSON.stringify(resolved.parent)
-        );
+    } else {
+      throw new Error(
+        "Unrecognized parent type: " + JSON.stringify(resolved.parent)
+      );
     }
   }
 

@@ -14,7 +14,7 @@ function welcomeListener(e: MessageEvent<string>) {
       onMessage(e, wrapper);
     });
 
-    for (const type of ["paragraph", "h1", "h2"]) {
+    for (const type of ["h1", "h2"]) {
       document.getElementById("button_" + type)!.onclick = () =>
         setBlockType(wrapper, type);
     }
@@ -74,15 +74,28 @@ function setBlockType(wrapper: ProseMirrorWrapper, type: string): void {
   const sel = wrapper.getSelection();
   let [start, end] = [sel.anchor, sel.head];
   if (wrapper.order.compare(start, end) > 0) [start, end] = [end, start];
+
   const startBlock = wrapper.blockMarkers.indexOfPosition(start, "left");
   const endBlock = wrapper.blockMarkers.indexOfPosition(end, "left");
+  const entries = [...wrapper.blockMarkers.entries(startBlock, endBlock + 1)];
+
+  // If they all have the given type, toggle it off. Else toggle it on.
+  let allHaveType = true;
+  for (const [, existing] of entries) {
+    if (existing.type !== type) {
+      allHaveType = false;
+      break;
+    }
+  }
+  const typeToSet = allHaveType ? "paragraph" : type;
+
   wrapper.update(() => {
     for (const [blockPos, existing] of wrapper.blockMarkers.entries(
       startBlock,
       endBlock + 1
     )) {
-      if (existing.type !== type) {
-        const marker = { ...existing, type };
+      if (existing.type !== typeToSet) {
+        const marker = { ...existing, type: typeToSet };
         wrapper.setMarker(blockPos, marker);
         send([{ type: "setMarker", pos: blockPos, marker }]);
       }
