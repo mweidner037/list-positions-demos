@@ -7,7 +7,7 @@ import {
 import { BunchMeta, List, Order, Position } from "list-positions";
 import { pcBaseKeymap, toggleMark } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
-import { Fragment, Mark, Node, Slice } from "prosemirror-model";
+import { Attrs, Fragment, Mark, Node, Slice } from "prosemirror-model";
 import {
   AllSelection,
   EditorState,
@@ -21,10 +21,11 @@ import {
   ReplaceStep,
 } from "prosemirror-transform";
 import { EditorView } from "prosemirror-view";
-import "prosemirror-view/style/prosemirror.css";
 import { BlockMarker, BlockTextSavedState } from "../common/block_text";
 import { Message } from "../common/messages";
 import { schema } from "./schema";
+
+import "prosemirror-view/style/prosemirror.css";
 
 const pmKey = "ProseMirrorWrapper";
 
@@ -93,6 +94,7 @@ export class ProseMirrorWrapper {
         ...pcBaseKeymap,
         "Mod-i": toggleMark(schema.marks.em),
         "Mod-b": toggleMark(schema.marks.strong),
+        // TODO: better list-enter behavior
       }),
       // Sync ProseMirror changes to our local state and the server.
       dispatchTransaction: this.onLocalTr.bind(this),
@@ -306,11 +308,14 @@ export class ProseMirrorWrapper {
    */
   private sync() {
     const nodes: Node[] = [];
+    let nextOl = 1;
     for (let b = 0; b < this.blockMarkers.length; b++) {
       const blockMarker = this.blockMarkers.getAt(b);
+      let node: Node;
+
       const cached = this.cachedBlocks.get(blockMarker);
       if (cached !== undefined) {
-        nodes.push(cached);
+        node = cached;
       } else {
         const textStart =
           this.list.indexOfPosition(this.blockMarkers.positionAt(b), "right") +
@@ -333,11 +338,35 @@ export class ProseMirrorWrapper {
               marks
             );
           });
-        const node = schema.node(blockMarker.type, null, content);
 
-        nodes.push(node);
-        this.cachedBlocks.set(blockMarker, node);
+        let attrs: Attrs | null = null;
+        switch (blockMarker.type) {
+          case "ul":
+            // TODO: adjust based on indent level.
+            attrs = { symbol: "•" };
+            break;
+          // case "ol" is handled later.
+        }
+
+        node = schema.node(blockMarker.type, attrs, content);
       }
+
+      // For "ol" nodes, ensure the symbol (count) is correct, even if not
+      // dirty - it may have changed because of an earlier dirty node.
+      if (node.type.name === "ol") {
+        const symbol = nextOl + ".";
+        if (node.attrs["symbol"] !== symbol) {
+          node = node.type.create(
+            { ...node.attrs, symbol },
+            node.content,
+            node.marks
+          );
+        }
+        nextOl++;
+      } else nextOl = 1;
+
+      if (node !== cached) this.cachedBlocks.set(blockMarker, node);
+      nodes.push(node);
     }
 
     // Replace the whole doc content, then restore the selection.
@@ -468,6 +497,7 @@ export class ProseMirrorWrapper {
         } else {
           console.error("Unsupported step", step);
           // TODO: Saw ReplaceAroundStep once, but not sure how it arised.
+          // (Multiple enters at end of a paragraph?)
         }
       }
 

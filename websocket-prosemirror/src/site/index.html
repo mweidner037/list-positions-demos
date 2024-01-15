@@ -14,6 +14,18 @@
         margin-top: 5px;
         max-width: 720px;
       }
+      /*
+        Instead of using proper lists (ul/ol/li), list items are
+        a <p> with a CSS ::before element containing the bullet/number.
+        This is nicely ignored by ProseMirror, non-selectable, and
+        customizable via our --before-content style prop.
+      */
+      .fakeLi::before {
+        content: var(--before-content);
+        display: inline-block;
+        text-align: center;
+        width: 30px;
+      }
     </style>
 
     <title>WebSocket-Prosemirror</title>
@@ -32,6 +44,8 @@
     <div onmousedown="return false;">
       <button id="button_h1">H1</button>
       <button id="button_h2">H2</button>
+      <button id="button_ul">Bullets</button>
+      <button id="button_ol">Numbers</button>
     </div>
 
     <div id="editor"></div>

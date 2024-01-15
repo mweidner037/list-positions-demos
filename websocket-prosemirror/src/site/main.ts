@@ -14,7 +14,7 @@ function welcomeListener(e: MessageEvent<string>) {
       onMessage(e, wrapper);
     });
 
-    for (const type of ["h1", "h2"]) {
+    for (const type of ["h1", "h2", "ul", "ol"]) {
       document.getElementById("button_" + type)!.onclick = () =>
         setBlockType(wrapper, type);
     }

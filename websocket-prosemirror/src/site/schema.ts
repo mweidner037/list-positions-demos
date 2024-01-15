@@ -3,6 +3,7 @@ import { DOMOutputSpec, MarkSpec, Schema } from "prosemirror-model";
 const pDOM: DOMOutputSpec = ["p", 0];
 const h1DOM: DOMOutputSpec = ["h1", 0];
 const h2DOM: DOMOutputSpec = ["h2", 0];
+
 const emDOM: DOMOutputSpec = ["em", 0];
 const strongDOM: DOMOutputSpec = ["strong", 0];
 
@@ -34,6 +35,50 @@ export const schema = new Schema({
       parseDOM: [{ tag: "h2" }],
       toDOM() {
         return h2DOM;
+      },
+    },
+    ul: {
+      group: "block",
+      content: "text*",
+      marks: "_",
+      attrs: {
+        /**
+         * This is only set in sync(), *not* stored in the collaborative state.
+         */
+        symbol: { default: "•" },
+      },
+      // TODO: ul vs ol
+      parseDOM: [{ tag: "li" }],
+      toDOM(node) {
+        return [
+          "p",
+          {
+            class: "fakeLi",
+            style: `--before-content: "${node.attrs.symbol}"`,
+          },
+          0,
+        ];
+      },
+    },
+    ol: {
+      group: "block",
+      content: "text*",
+      marks: "_",
+      attrs: {
+        /**
+         * This is only set in sync(), *not* stored in the collaborative state.
+         */
+        symbol: { default: "1." },
+      },
+      toDOM(node) {
+        return [
+          "p",
+          {
+            class: "fakeLi",
+            style: `--before-content: "${node.attrs.symbol}"`,
+          },
+          0,
+        ];
       },
     },
     text: {},
