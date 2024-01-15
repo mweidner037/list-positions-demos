@@ -225,6 +225,7 @@ export class ProseMirrorWrapper {
       // in case it's been split/merged.
       this.blockMarkers.indexOfPosition(startPos, "right") - 1
     );
+    // TODO: if startPos is a block marker and endPos is same/undefined, this leaves out the pos itself.
     // Inclusive
     const blockEnd = Math.min(
       this.blockMarkers.length - 1,
@@ -414,10 +415,6 @@ export class ProseMirrorWrapper {
           // Insertion
           const content = step.slice.content;
           if (content.childCount !== 0) {
-            // Mark containing block dirty.
-            // Created blocks are automatically dirty b/c not in cache.
-            this.markDirty(this.list.positionAt(fromIndex - 1));
-
             if (step.slice.openStart === 0 && step.slice.openEnd === 0) {
               // Insert children directly. Only dirties containing block.
               this.insertInline(fromIndex, content, messages);
@@ -458,6 +455,9 @@ export class ProseMirrorWrapper {
                 );
               }
             } else console.error("Unsupported open start/end", step.slice);
+            // Mark block containing the first inserted value dirty.
+            // New blocks are automatically dirty b/c not in cache.
+            this.markDirty(this.list.positionAt(fromIndex));
           }
         } else if (
           step instanceof AddMarkStep ||
@@ -476,9 +476,12 @@ export class ProseMirrorWrapper {
           this.formatting.addMark(mark);
           messages.push({ type: "mark", mark });
 
-          // Empirically, ProseMirror gives a separate step per block, so we only
-          // have to mark the containing block dirty.
-          this.markDirty(this.list.positionAt(fromIndex));
+          // AddMarkSteps give a separate step per block, but RemoveMarkSteps don't.
+          // For simplicity, mark the whole span dirty regardless.
+          this.markDirty(
+            this.list.positionAt(fromIndex),
+            this.list.positionAt(toIndex - 1)
+          );
         } else {
           console.error("Unsupported step", step);
         }
@@ -636,12 +639,17 @@ export class ProseMirrorWrapper {
       // Point to start of the first block.
       return 0;
     }
+    if (listIndex === this.list.length) {
+      // Insertion/cursor at end of text. Point to 1 after the last char
+      // in the last block.
+      return doc.content.size - 1;
+    }
 
     const pos = this.list.positionAt(listIndex);
-    const blockIndex = this.blockMarkers.indexOfPosition(pos, "left");
-    // Each previous block gives +2 (enter & leave), except we don't leave
-    // the last block (-1).
-    return listIndex + blockIndex * 2 - 1;
+    // Each prior block has an extra "leave" step.
+    // Except, if pos is a blockMarker, don't leave the previous block.
+    const extraLeaveSteps = this.blockMarkers.indexOfPosition(pos, "right") - 1;
+    return listIndex + extraLeaveSteps;
   }
 
   /**
@@ -677,7 +685,6 @@ export class ProseMirrorWrapper {
       case "TextSelection":
         return TextSelection.create(
           doc,
-          // TODO: check end-of-block edge case
           this.pmPosAt(doc, this.list.indexOfCursor(sel.anchor)),
           this.pmPosAt(doc, this.list.indexOfCursor(sel.head))
         );
