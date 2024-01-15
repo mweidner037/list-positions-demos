@@ -216,22 +216,21 @@ export class ProseMirrorWrapper {
    *
    * If startPos is a block marker pos, the previous block also gets marked dirty.
    *
-   * Okay to go over - will just rerender some blocks redundantly.
+   * Okay to overshoot - will just rerender some blocks redundantly.
    */
-  private markDirty(startPos: Position, endPos?: Position): void {
+  private markDirty(startPos: Position, endPos = startPos): void {
     const blockStart = Math.max(
       0,
       // If startPos is/was a block, this will catch the previous block,
       // in case it's been split/merged.
       this.blockMarkers.indexOfPosition(startPos, "right") - 1
     );
-    // TODO: if startPos is a block marker and endPos is same/undefined, this leaves out the pos itself.
-    // Inclusive
+    // Inclusive.
+    // OPT: Avoid second indexOfPosition call if endPos = undefined/startPos.
+    // (Need to check if pos is a blockMarker due to right/left difference.)
     const blockEnd = Math.min(
       this.blockMarkers.length - 1,
-      endPos === undefined || Order.equalsPosition(startPos, endPos)
-        ? blockStart
-        : this.blockMarkers.indexOfPosition(endPos, "left")
+      this.blockMarkers.indexOfPosition(endPos, "left")
     );
     for (const blockMarker of this.blockMarkers.values(
       blockStart,
@@ -633,8 +632,6 @@ export class ProseMirrorWrapper {
    * @param doc Must be in sync with this.list.
    */
   private pmPosAt(doc: Node, listIndex: number): number {
-    // TODO: rewrite to use blockMarkers, for less brittleness.
-
     if (listIndex === 0) {
       // Point to start of the first block.
       return 0;
@@ -645,11 +642,23 @@ export class ProseMirrorWrapper {
       return doc.content.size - 1;
     }
 
+    let pmPos = 0;
     const pos = this.list.positionAt(listIndex);
-    // Each prior block has an extra "leave" step.
-    // Except, if pos is a blockMarker, don't leave the previous block.
-    const extraLeaveSteps = this.blockMarkers.indexOfPosition(pos, "right") - 1;
-    return listIndex + extraLeaveSteps;
+    // The index of the block containing pos.
+    // If pos points to a blockMarker, we consider it part of the previous block.
+    const blockIndex = this.blockMarkers.indexOfPosition(pos, "right") - 1;
+    // Add the size of all blocks before the one containing pos.
+    for (let b = 0; b < blockIndex; b++) {
+      pmPos += doc.child(b).nodeSize;
+    }
+    // Add 1 to enter the block containing pos.
+    pmPos++;
+    // Add pos's index within its block.
+    const blockStart = this.list.indexOfPosition(
+      this.blockMarkers.positionAt(blockIndex)
+    );
+    pmPos += listIndex - blockStart - 1;
+    return pmPos;
   }
 
   /**
