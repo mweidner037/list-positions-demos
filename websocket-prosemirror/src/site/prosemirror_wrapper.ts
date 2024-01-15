@@ -342,7 +342,6 @@ export class ProseMirrorWrapper {
         let attrs: Attrs | null = null;
         switch (blockMarker.type) {
           case "ul":
-            // TODO: adjust based on indent level.
             attrs = { symbol: "•" };
             break;
           // case "ol" is handled later.
