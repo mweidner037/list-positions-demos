@@ -1,10 +1,10 @@
 # Triplit-Quill
 
-Basic collaborative rich-text editor that synchronizes using the [Triplit](https://www.triplit.dev/) fullstack database. The editor is [Quill](https://quilljs.com/).
+Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [Triplit](https://www.triplit.dev/) fullstack database, and [Quill](https://quilljs.com/).
 
 The editor state is stored in a Triplit database with three tables:
 
-- `bunches` for the BunchMeta.
+- `bunches` for list-positions's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata).
 - `values` for the values (characters). For simplicity, each character gets its own row. (It's probably possible to instead store one row per bunch instead, using an `S.Set` to track which chars are present/deleted.)
 - `marks` for the formatting marks.
 
