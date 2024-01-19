@@ -240,6 +240,27 @@ export class ProseMirrorWrapper {
     });
   }
 
+  applyMessage(msg: Message) {
+    switch (msg.type) {
+      case "set":
+        if (msg.meta) this.order.receive([msg.meta]);
+        this.set(msg.startPos, msg.chars);
+        break;
+      case "setMarker":
+        if (msg.meta) this.order.receive([msg.meta]);
+        this.setMarker(msg.pos, msg.marker);
+        break;
+      case "delete":
+        this.delete(msg.pos);
+        break;
+      case "mark":
+        this.addMark(msg.mark);
+        break;
+      default:
+        console.error("Unexpected message type:", msg.type, msg);
+    }
+  }
+
   /**
    * Marks all Positions in the range [startPos, endPos ?? startPos] dirty,
    * so that their blocks will be rerendered on the next sync().

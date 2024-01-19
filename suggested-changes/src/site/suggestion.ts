@@ -4,12 +4,20 @@ import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
 
+// TODO: a suggested formatting span with expansion will expand to also
+// cover existing text before/after the suggestion's span. Need to
+// remember neighboring chars somehow.
+
 export class Suggestion {
   readonly container: HTMLDivElement;
   readonly wrapper: ProseMirrorWrapper;
   readonly messages: Message[] = [];
 
-  constructor(parent: HTMLElement, origin: ProseMirrorWrapper) {
+  constructor(
+    parent: HTMLElement,
+    origin: ProseMirrorWrapper,
+    private readonly onAccept: (msgs: Message[]) => void
+  ) {
     this.container = document.createElement("div");
 
     // Extract initial state: the selection in origin.
@@ -45,11 +53,32 @@ export class Suggestion {
       (msgs) => this.messages.push(...msgs)
     );
 
+    const buttonDiv = document.createElement("div");
+    const acceptButton = document.createElement("button");
+    acceptButton.innerText = "✅️";
+    acceptButton.onclick = () => this.accept();
+    buttonDiv.appendChild(acceptButton);
+    const rejectButton = document.createElement("button");
+    rejectButton.innerText = "❌️";
+    rejectButton.onclick = () => this.reject();
+    buttonDiv.appendChild(rejectButton);
+    this.container.appendChild(buttonDiv);
+
     parent.appendChild(this.container);
+  }
+
+  accept(): void {
+    this.onAccept(this.messages);
+    this.destroy();
+  }
+
+  reject(): void {
+    this.destroy();
   }
 
   destroy() {
     this.container.parentElement?.removeChild(this.container);
+    this.wrapper.view.destroy();
   }
 
   // TODO: update in response to main-text changes in range.

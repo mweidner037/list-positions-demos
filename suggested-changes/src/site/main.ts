@@ -7,23 +7,25 @@ const ws = new WebSocket(wsURL);
 
 const suggestionsDiv = document.getElementById("suggestions") as HTMLDivElement;
 
+let wrapper!: ProseMirrorWrapper;
+
 function welcomeListener(e: MessageEvent<string>) {
   const msg = JSON.parse(e.data) as Message;
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    const wrapper = new ProseMirrorWrapper(
+    wrapper = new ProseMirrorWrapper(
       document.querySelector("#editor")!,
       { savedState: msg.savedState },
       onLocalChange
     );
     ws.addEventListener("message", (e: MessageEvent<string>) => {
-      onMessage(e, wrapper);
+      onWsMessage(e);
     });
 
     for (const type of ["h1", "h2", "ul", "ol"]) {
       document.getElementById("button_" + type)!.onclick = () =>
-        setBlockType(wrapper, type);
+        setBlockType(type);
     }
 
     // Enable "suggest changes" button only when the selection is nontrivial.
@@ -35,7 +37,7 @@ function welcomeListener(e: MessageEvent<string>) {
       suggestChanges.disabled = pmSel.from === pmSel.to;
     };
     suggestChanges.onclick = () => {
-      new Suggestion(suggestionsDiv, wrapper);
+      new Suggestion(suggestionsDiv, wrapper, onAccept);
     };
   } else {
     console.error("Received non-welcome message first: " + msg.type);
@@ -61,32 +63,28 @@ function send(msgs: Message[]): void {
 }
 
 // TODO: batch delivery, wrapped in wrapper.update().
-function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
+function onWsMessage(e: MessageEvent<string>): void {
   const msg = JSON.parse(e.data) as Message;
-  switch (msg.type) {
-    case "set":
-      if (msg.meta) wrapper.order.receive([msg.meta]);
-      wrapper.set(msg.startPos, msg.chars);
-      break;
-    case "setMarker":
-      if (msg.meta) wrapper.order.receive([msg.meta]);
-      wrapper.setMarker(msg.pos, msg.marker);
-      break;
-    case "delete":
-      wrapper.delete(msg.pos);
-      break;
-    case "mark":
-      wrapper.addMark(msg.mark);
-      break;
-    default:
-      console.error("Unexpected message type:", msg.type, msg);
-  }
+  wrapper.applyMessage(msg);
+}
+
+/**
+ * Called when a suggested change is accepted, with the given changes.
+ */
+function onAccept(msgs: Message[]): void {
+  // Apply the changes locally.
+  wrapper.update(() => {
+    for (const msg of msgs) wrapper.applyMessage(msg);
+  });
+
+  // Apply the changes remotely.
+  send(msgs);
 }
 
 /**
  * Sets the currently selected block(s) to the given type.
  */
-function setBlockType(wrapper: ProseMirrorWrapper, type: string): void {
+function setBlockType(type: string): void {
   // Cursors point to the Position on their left.
   // Affect all block markers between those immediately left (inclusive)
   // of anchor and head.
@@ -121,3 +119,6 @@ function setBlockType(wrapper: ProseMirrorWrapper, type: string): void {
     }
   });
 }
+
+// TODO: show suggestions as gray highlight in main doc; when a selection
+// is focused, emphasize its highlight.
