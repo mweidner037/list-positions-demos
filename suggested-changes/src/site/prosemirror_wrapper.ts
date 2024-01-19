@@ -60,6 +60,13 @@ export class ProseMirrorWrapper {
   private cachedBlocks = new Map<BlockMarker, Node>();
 
   /**
+   * Event listener for (possible) changes to this.selection.
+   *
+   * Called after the changes are synced to ProseMirror.
+   */
+  onSelectionChange: (() => void) | undefined = undefined;
+
+  /**
    *
    * @param initialState Must start with a block.
    * @param onLocalChange Callback for when the local user changes the state
@@ -70,15 +77,34 @@ export class ProseMirrorWrapper {
    * updates on this's state before returning.
    */
   constructor(
-    initialState: BlockTextSavedState,
+    editorPlace: HTMLElement,
+    initialState:
+      | { savedState: BlockTextSavedState }
+      | {
+          refState: {
+            list: List<string | BlockMarker>;
+            formatting: TimestampFormatting;
+          };
+        },
     readonly onLocalChange: (msgs: Message[]) => void
   ) {
-    this.order = new Order();
-    this.list = new List(this.order);
-    this.blockMarkers = new List(this.order);
-    this.formatting = new TimestampFormatting(this.order);
+    if ("savedState" in initialState) {
+      this.order = new Order();
+      this.list = new List(this.order);
+      this.blockMarkers = new List(this.order);
+      this.formatting = new TimestampFormatting(this.order);
 
-    this.loadInternal(initialState);
+      this.loadInternal(initialState.savedState);
+    } else {
+      this.list = initialState.refState.list;
+      this.order = this.list.order;
+      this.formatting = initialState.refState.formatting;
+
+      this.blockMarkers = new List(this.order);
+      for (const [pos, value] of this.list.entries()) {
+        if (typeof value === "object") this.blockMarkers.set(pos, value);
+      }
+    }
 
     // Set cursor to front of first char.
     this.selection = {
@@ -88,7 +114,7 @@ export class ProseMirrorWrapper {
     };
 
     // Setup ProseMirror.
-    this.view = new EditorView(document.querySelector("#editor"), {
+    this.view = new EditorView(editorPlace, {
       state: EditorState.create({ schema }),
       handleKeyDown: keydownHandler({
         ...pcBaseKeymap,
@@ -384,6 +410,7 @@ export class ProseMirrorWrapper {
     if (tr.getMeta(pmKey)) {
       // Our own change; pass through.
       this.view.updateState(this.view.state.apply(tr));
+      this.onSelectionChange?.();
       return;
     }
 
@@ -401,6 +428,7 @@ export class ProseMirrorWrapper {
       // E.g. selection-only change.
       this.selection = this.listSelectionFromPm(tr.doc, tr.selection);
       this.view.updateState(this.view.state.apply(tr));
+      this.onSelectionChange?.();
       return;
     }
 

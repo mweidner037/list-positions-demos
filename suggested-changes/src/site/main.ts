@@ -9,7 +9,11 @@ function welcomeListener(e: MessageEvent<string>) {
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    const wrapper = new ProseMirrorWrapper(msg.savedState, onLocalChange);
+    const wrapper = new ProseMirrorWrapper(
+      document.querySelector("#editor")!,
+      { savedState: msg.savedState },
+      onLocalChange
+    );
     ws.addEventListener("message", (e: MessageEvent<string>) => {
       onMessage(e, wrapper);
     });
@@ -18,6 +22,15 @@ function welcomeListener(e: MessageEvent<string>) {
       document.getElementById("button_" + type)!.onclick = () =>
         setBlockType(wrapper, type);
     }
+
+    // Enable "suggest changes" button only when the selection is nontrivial.
+    const suggestChanges = document.getElementById(
+      "button_suggest"
+    ) as HTMLButtonElement;
+    wrapper.onSelectionChange = () => {
+      const pmSel = wrapper.view.state.selection;
+      suggestChanges.disabled = pmSel.from === pmSel.to;
+    };
   } else {
     console.error("Received non-welcome message first: " + msg.type);
   }
