@@ -1,5 +1,5 @@
 import { TimestampFormatting } from "list-formatting";
-import { List } from "list-positions";
+import { List, Position } from "list-positions";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
@@ -13,10 +13,15 @@ export class Suggestion {
   readonly wrapper: ProseMirrorWrapper;
   readonly messages: Message[] = [];
 
+  readonly startPos: Position;
+  /** Inclusive. */
+  readonly endPosIncl: Position;
+
   constructor(
     parent: HTMLElement,
     origin: ProseMirrorWrapper,
-    private readonly onAccept: (msgs: Message[]) => void
+    private readonly onAccept: (caller: Suggestion, msgs: Message[]) => void,
+    private readonly onReject: (caller: Suggestion) => void
   ) {
     this.container = document.createElement("div");
 
@@ -27,6 +32,8 @@ export class Suggestion {
     if (selStart === selEnd) {
       throw new Error("Selection is empty");
     }
+    this.startPos = origin.list.positionAt(selStart);
+    this.endPosIncl = origin.list.positionAt(selEnd - 1);
 
     const list = new List<string | BlockMarker>(origin.order);
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
@@ -58,6 +65,7 @@ export class Suggestion {
     acceptButton.innerText = "✅️";
     acceptButton.onclick = () => this.accept();
     buttonDiv.appendChild(acceptButton);
+    // TODO: padding between
     const rejectButton = document.createElement("button");
     rejectButton.innerText = "❌️";
     rejectButton.onclick = () => this.reject();
@@ -67,19 +75,62 @@ export class Suggestion {
     parent.appendChild(this.container);
   }
 
-  accept(): void {
-    this.onAccept(this.messages);
+  isInRange(pos: Position): boolean {
+    return (
+      this.wrapper.order.compare(this.startPos, pos) <= 0 &&
+      this.wrapper.order.compare(pos, this.endPosIncl) <= 0
+    );
+  }
+
+  /**
+   * Updates our state to reflect ops on the origin doc.
+   */
+  applyOriginMessages(msgs: Message[]): void {
+    this.wrapper.update(() => {
+      for (const msg of msgs) {
+        switch (msg.type) {
+          case "set":
+            // meta is already applied via the origin's set method.
+            // Note: this assumes a new position, so it's either all in range or all not.
+            if (this.isInRange(msg.startPos)) {
+              this.wrapper.set(msg.startPos, msg.chars);
+            }
+            break;
+          case "setMarker":
+            // meta is already applied via the origin's set method.
+            // TODO: also capture updates to our marker.
+            if (this.isInRange(msg.pos)) {
+              this.wrapper.setMarker(msg.pos, msg.marker);
+            }
+            break;
+          case "delete":
+            // TODO: what if our marker is deleted and we need to back up to the previous marker?
+            // Will currently throw error (can't delete starting marker).
+            this.wrapper.delete(msg.pos);
+            break;
+          case "mark":
+            // TODO: only add formatting spans in range.
+            this.wrapper.addMark(msg.mark);
+            break;
+          default:
+            console.error("Unexpected message type:", msg.type, msg);
+        }
+      }
+    });
+  }
+
+  private accept(): void {
+    this.onAccept(this, this.messages);
     this.destroy();
   }
 
-  reject(): void {
+  private reject(): void {
+    this.onReject(this);
     this.destroy();
   }
 
-  destroy() {
+  private destroy() {
     this.container.parentElement?.removeChild(this.container);
     this.wrapper.view.destroy();
   }
-
-  // TODO: update in response to main-text changes in range.
 }

@@ -8,6 +8,7 @@ const ws = new WebSocket(wsURL);
 const suggestionsDiv = document.getElementById("suggestions") as HTMLDivElement;
 
 let wrapper!: ProseMirrorWrapper;
+const suggestions = new Set<Suggestion>();
 
 function welcomeListener(e: MessageEvent<string>) {
   const msg = JSON.parse(e.data) as Message;
@@ -37,7 +38,13 @@ function welcomeListener(e: MessageEvent<string>) {
       suggestChanges.disabled = pmSel.from === pmSel.to;
     };
     suggestChanges.onclick = () => {
-      new Suggestion(suggestionsDiv, wrapper, onAccept);
+      const suggestion = new Suggestion(
+        suggestionsDiv,
+        wrapper,
+        onAccept,
+        onReject
+      );
+      suggestions.add(suggestion);
     };
   } else {
     console.error("Received non-welcome message first: " + msg.type);
@@ -52,6 +59,11 @@ ws.addEventListener("message", welcomeListener);
 
 function onLocalChange(msgs: Message[]) {
   send(msgs);
+  // TODO: use formatting spans to quickly get the affected suggestions,
+  // instead of looping over all of them?
+  // Or, only update the suggestions in view.
+  // Likewise in onWsMessage.
+  for (const suggestion of suggestions) suggestion.applyOriginMessages(msgs);
 }
 
 function send(msgs: Message[]): void {
@@ -66,12 +78,13 @@ function send(msgs: Message[]): void {
 function onWsMessage(e: MessageEvent<string>): void {
   const msg = JSON.parse(e.data) as Message;
   wrapper.applyMessage(msg);
+  for (const suggestion of suggestions) suggestion.applyOriginMessages([msg]);
 }
 
 /**
  * Called when a suggested change is accepted, with the given changes.
  */
-function onAccept(msgs: Message[]): void {
+function onAccept(caller: Suggestion, msgs: Message[]): void {
   // Apply the changes locally.
   wrapper.update(() => {
     for (const msg of msgs) wrapper.applyMessage(msg);
@@ -79,6 +92,12 @@ function onAccept(msgs: Message[]): void {
 
   // Apply the changes remotely.
   send(msgs);
+
+  suggestions.delete(caller);
+}
+
+function onReject(caller: Suggestion): void {
+  suggestions.delete(caller);
 }
 
 /**
