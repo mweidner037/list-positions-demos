@@ -1,5 +1,5 @@
 import { TimestampFormatting } from "list-formatting";
-import { List, Position } from "list-positions";
+import { List, Order, Position } from "list-positions";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
@@ -16,10 +16,14 @@ export class Suggestion {
   readonly startPos: Position;
   /** Inclusive. */
   readonly endPosIncl: Position;
+  /**
+   * The block Position <= startPos.
+   */
+  firstBlockPos: Position;
 
   constructor(
     parent: HTMLElement,
-    origin: ProseMirrorWrapper,
+    readonly origin: ProseMirrorWrapper,
     private readonly onAccept: (caller: Suggestion, msgs: Message[]) => void,
     private readonly onReject: (caller: Suggestion) => void
   ) {
@@ -45,15 +49,14 @@ export class Suggestion {
       origin.list.positionAt(selStart),
       "left"
     );
-    const blockPos = origin.blockMarkers.positionAt(blockIndex);
-    list.set(blockPos, origin.blockMarkers.get(blockPos)!);
+    this.firstBlockPos = origin.blockMarkers.positionAt(blockIndex);
+    list.set(this.firstBlockPos, origin.blockMarkers.get(this.firstBlockPos)!);
 
     const formatting = new TimestampFormatting(list.order);
     // TODO: optimization: only extract formatting spans in range.
     formatting.load(origin.formatting.save());
 
     // Construct our GUI.
-    // TODO: separate .ProseMirror class (smaller, different bg color).
     this.wrapper = new ProseMirrorWrapper(
       this.container,
       { refState: { list, formatting } },
@@ -98,14 +101,29 @@ export class Suggestion {
             break;
           case "setMarker":
             // meta is already applied via the origin's set method.
-            // TODO: also capture updates to our marker.
-            if (this.isInRange(msg.pos)) {
+            if (
+              Order.equalsPosition(msg.pos, this.firstBlockPos) ||
+              this.isInRange(msg.pos)
+            ) {
               this.wrapper.setMarker(msg.pos, msg.marker);
             }
             break;
           case "delete":
-            // TODO: what if our marker is deleted and we need to back up to the previous marker?
-            // Will currently throw error (can't delete starting marker).
+            if (Order.equalsPosition(msg.pos, this.firstBlockPos)) {
+              // Before deleting, need to fill in the previous blockPos, so that
+              // wrapper.list always starts with a block marker.
+              const curIndex = this.origin.blockMarkers.indexOfPosition(
+                this.firstBlockPos,
+                "right"
+              );
+              this.firstBlockPos = this.origin.blockMarkers.positionAt(
+                curIndex - 1
+              );
+              this.wrapper.setMarker(
+                this.firstBlockPos,
+                this.origin.blockMarkers.get(this.firstBlockPos)!
+              );
+            }
             this.wrapper.delete(msg.pos);
             break;
           case "mark":

@@ -90,8 +90,8 @@ function onAccept(caller: Suggestion, msgs: Message[]): void {
     for (const msg of msgs) wrapper.applyMessage(msg);
   });
 
-  // Apply the changes remotely.
-  send(msgs);
+  // Apply the changes remotely and to other suggestions.
+  onLocalChange(msgs);
 
   suggestions.delete(caller);
 }
@@ -133,7 +133,7 @@ function setBlockType(type: string): void {
       if (existing.type !== typeToSet) {
         const marker = { ...existing, type: typeToSet };
         wrapper.setMarker(blockPos, marker);
-        send([{ type: "setMarker", pos: blockPos, marker }]);
+        onLocalChange([{ type: "setMarker", pos: blockPos, marker }]);
       }
     }
   });

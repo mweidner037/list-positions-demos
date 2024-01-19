@@ -170,9 +170,6 @@ export class ProseMirrorWrapper {
    */
   setMarker(pos: Position, marker: BlockMarker): void {
     this.update(() => {
-      if (this.order.compare(pos, this.blockMarkers.positionAt(0)) < 0) {
-        throw new Error("Cannot set a Position before the first block");
-      }
       const had = this.blockMarkers.has(pos);
       this.list.set(pos, marker);
       this.blockMarkers.set(pos, marker);
@@ -219,9 +216,6 @@ export class ProseMirrorWrapper {
     marker: BlockMarker
   ): [pos: Position, createdBunch: BunchMeta | null] {
     return this.update(() => {
-      if (listIndex === 0) {
-        throw new Error("Cannot insert before the first block");
-      }
       const [pos, createdBunch] = this.list.insertAt(listIndex, marker);
       this.blockMarkers.set(pos, marker);
       this.markDirty(pos);
