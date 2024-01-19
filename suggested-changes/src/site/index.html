@@ -12,7 +12,7 @@
         border: 2px solid rgba(0, 0, 0, 0.2);
         padding: 0 0;
         margin-top: 5px;
-        max-width: 720px;
+        width: 720px;
       }
       /*
         Instead of using proper lists (ul/ol/li), list items are
@@ -40,17 +40,22 @@
       <hr />
     </div>
 
-    <!-- Prevent the toolbar from stealing focus. -->
-    <div onmousedown="return false;">
-      <button id="button_h1">H1</button>
-      <button id="button_h2">H2</button>
-      <button id="button_ul">Bullets</button>
-      <button id="button_ol">Numbers</button>
+    <div style="display: flex; align-items: flex-start; gap: 30px">
+      <div>
+        <!-- Prevent the toolbar from stealing focus. -->
+        <div onmousedown="return false;">
+          <button id="button_h1">H1</button>
+          <button id="button_h2">H2</button>
+          <button id="button_ul">Bullets</button>
+          <button id="button_ol">Numbers</button>
+        </div>
+
+        <div id="editor"></div>
+
+        <!-- TODO: right-click option instead, only enabled for nontrivial selection. -->
+        <button id="button_suggest" disabled>Suggest change</button>
+      </div>
+      <div id="suggestions"><h3>Suggested Changes</h3></div>
     </div>
-
-    <div id="editor"></div>
-
-    <!-- TODO: right-click option instead, only enabled for nontrivial selection. -->
-    <button id="button_suggest" disabled>Suggest change</button>
   </body>
 </html>

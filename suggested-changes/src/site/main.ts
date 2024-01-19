@@ -1,8 +1,11 @@
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
+import { Suggestion } from "./suggestion";
 
 const wsURL = location.origin.replace(/^http/, "ws");
 const ws = new WebSocket(wsURL);
+
+const suggestionsDiv = document.getElementById("suggestions") as HTMLDivElement;
 
 function welcomeListener(e: MessageEvent<string>) {
   const msg = JSON.parse(e.data) as Message;
@@ -30,6 +33,9 @@ function welcomeListener(e: MessageEvent<string>) {
     wrapper.onSelectionChange = () => {
       const pmSel = wrapper.view.state.selection;
       suggestChanges.disabled = pmSel.from === pmSel.to;
+    };
+    suggestChanges.onclick = () => {
+      new Suggestion(suggestionsDiv, wrapper);
     };
   } else {
     console.error("Received non-welcome message first: " + msg.type);
