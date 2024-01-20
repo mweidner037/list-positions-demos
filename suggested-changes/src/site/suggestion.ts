@@ -1,4 +1,4 @@
-import { Anchors, TimestampFormatting } from "list-formatting";
+import { TimestampFormatting } from "list-formatting";
 import { List, Order, Position } from "list-positions";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
@@ -13,14 +13,9 @@ export class Suggestion {
   readonly wrapper: ProseMirrorWrapper;
   readonly messages: Message[] = [];
 
-  // We store the suggestion's range as an open interval (startPosExcl, endPosExcl).
-  // This results in "expand = both" behavior, which is less nice than "expand = none".
-  // However, it prevents issues where text appended (resp. prepended) to a suggestion
-  // unexpectedly appears later in the document (since from this.wrapper's perspective,
-  // it was inserted at the end of the list, hence can appear anywhere between the last
-  // Position and Order.MAX_POSITION).
-  readonly startPosExcl: Position;
-  readonly endPosExcl: Position;
+  readonly startPos: Position;
+  /** Inclusive. */
+  readonly endPosIncl: Position;
   /**
    * The block Position <= startPos.
    */
@@ -41,14 +36,8 @@ export class Suggestion {
     if (selStart === selEnd) {
       throw new Error("Selection is empty");
     }
-    this.startPosExcl =
-      selStart === 0
-        ? Order.MIN_POSITION
-        : origin.list.positionAt(selStart - 1);
-    this.endPosExcl =
-      selEnd === origin.list.length
-        ? Order.MAX_POSITION
-        : origin.list.positionAt(selEnd);
+    this.startPos = origin.list.positionAt(selStart);
+    this.endPosIncl = origin.list.positionAt(selEnd - 1);
 
     const list = new List<string | BlockMarker>(origin.order);
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
@@ -71,7 +60,7 @@ export class Suggestion {
     this.wrapper = new ProseMirrorWrapper(
       this.container,
       { refState: { list, formatting } },
-      this.onLocalChange.bind(this)
+      (msgs) => this.messages.push(...msgs)
     );
 
     const buttonDiv = document.createElement("div");
@@ -89,39 +78,10 @@ export class Suggestion {
     parent.appendChild(this.container);
   }
 
-  private onLocalChange(msgs: Message[]): void {
-    for (let msg of msgs) {
-      if (msg.type === "mark") {
-        // If the mark goes to the min/max anchors, modify it to instead go
-        // up to startPosExcl/endPosExcl. Otherwise, when applied to the origin,
-        // it will affect the whole rest of the text.
-        const minStart = Anchors.equals(msg.mark.start, Anchors.MIN_ANCHOR);
-        const maxEnd = Anchors.equals(msg.mark.end, Anchors.MAX_ANCHOR);
-        if (minStart || maxEnd) {
-          this.wrapper.deleteMark(msg.mark);
-          msg = {
-            ...msg,
-            mark: {
-              ...msg.mark,
-              start: minStart
-                ? { pos: this.startPosExcl, before: false }
-                : msg.mark.start,
-              end: maxEnd
-                ? { pos: this.endPosExcl, before: true }
-                : msg.mark.end,
-            },
-          };
-          this.wrapper.addMark(msg.mark);
-        }
-      }
-      this.messages.push(msg);
-    }
-  }
-
   isInRange(pos: Position): boolean {
     return (
-      this.wrapper.order.compare(this.startPosExcl, pos) < 0 &&
-      this.wrapper.order.compare(pos, this.endPosExcl) < 0
+      this.wrapper.order.compare(this.startPos, pos) <= 0 &&
+      this.wrapper.order.compare(pos, this.endPosIncl) <= 0
     );
   }
 
