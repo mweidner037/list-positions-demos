@@ -234,6 +234,17 @@ export class ProseMirrorWrapper {
     });
   }
 
+  deleteMark(mark: TimestampMark): void {
+    this.update(() => {
+      const changes = this.formatting.deleteMark(mark);
+      if (changes.length !== 0) {
+        // Mark was not completely redundant. Assume the whole span may have
+        // changed (plus endpoints) and tell touched blocks to update.
+        this.markDirty(mark.start.pos, mark.end.pos);
+      }
+    });
+  }
+
   applyMessage(msg: Message) {
     switch (msg.type) {
       case "set":
