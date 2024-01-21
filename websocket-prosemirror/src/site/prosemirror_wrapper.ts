@@ -4,7 +4,7 @@ import {
   diffFormats,
   spanFromSlice,
 } from "list-formatting";
-import { BunchMeta, List, Order, Position } from "list-positions";
+import { BunchIDs, BunchMeta, List, Order, Position } from "list-positions";
 import { pcBaseKeymap, toggleMark } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Attrs, Fragment, Mark, Node, Slice } from "prosemirror-model";
@@ -60,6 +60,12 @@ export class ProseMirrorWrapper {
   private cachedBlocks = new Map<BlockMarker, Node>();
 
   /**
+   * Lamport timestamp, used for block markers' LWW.
+   */
+  private timestamp = 0;
+  private replicaID: string;
+
+  /**
    *
    * @param initialState Must start with a block.
    * @param onLocalChange Callback for when the local user changes the state
@@ -79,6 +85,8 @@ export class ProseMirrorWrapper {
     this.formatting = new TimestampFormatting(this.order);
 
     this.loadInternal(initialState);
+
+    this.replicaID = BunchIDs.newReplicaID();
 
     // Set cursor to front of first char.
     this.selection = {
@@ -148,8 +156,20 @@ export class ProseMirrorWrapper {
         throw new Error("Cannot set a Position before the first block");
       }
       const had = this.blockMarkers.has(pos);
+      if (had) {
+        const existing = this.blockMarkers.get(pos)!;
+        if (
+          existing.timestamp > marker.timestamp ||
+          (existing.timestamp === marker.timestamp &&
+            existing.creatorID > marker.creatorID)
+        ) {
+          // Existing timestamp wins by the LWW rule - ignore.
+          return;
+        }
+      }
       this.list.set(pos, marker);
       this.blockMarkers.set(pos, marker);
+      this.timestamp = Math.max(this.timestamp, marker.timestamp);
       if (!had) {
         // Mark the previous block marker as dirty, since its block was split.
         this.markDirty(pos);
@@ -445,7 +465,11 @@ export class ProseMirrorWrapper {
                 const blockChild = content.child(b);
                 if (b !== 0) {
                   // Insert new block marker before the block's content.
-                  const marker: BlockMarker = { type: blockChild.type.name };
+                  const marker: BlockMarker = {
+                    type: blockChild.type.name,
+                    timestamp: ++this.timestamp,
+                    creatorID: this.replicaID,
+                  };
                   const [pos, createdBunch] = this.list.insertAt(
                     insIndex,
                     marker

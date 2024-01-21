@@ -24,7 +24,11 @@ export class RichTextServer {
     this.marks = [];
 
     // Initial state: a single paragraph, to match Prosemirror's starting state.
-    this.blockMarkers.insertAt(0, { type: "paragraph" });
+    this.blockMarkers.insertAt(0, {
+      type: "paragraph",
+      timestamp: 1,
+      creatorID: "INIT",
+    });
 
     this.wss.on("connection", (ws) => {
       if (ws.readyState === WebSocket.OPEN) {

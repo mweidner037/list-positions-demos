@@ -7,6 +7,11 @@ import { ListSavedState, OrderSavedState } from "list-positions";
 export type BlockMarker = {
   readonly type: string;
   readonly attrs?: Record<string, any>;
+  /**
+   * Lamport timestamp for LWW.
+   */
+  readonly timestamp: number;
+  readonly creatorID: string;
 };
 
 export type BlockTextSavedState = {
