@@ -4,20 +4,15 @@ import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
 
-// TODO: a suggested formatting span with expansion will expand to also
-// cover existing text before/after the suggestion's span. Need to
-// remember neighboring chars somehow.
-
 export class Suggestion {
   readonly container: HTMLDivElement;
   readonly wrapper: ProseMirrorWrapper;
   readonly messages: Message[] = [];
 
-  readonly startPos: Position;
-  /** Inclusive. */
-  readonly endPosIncl: Position;
+  readonly beforePos: Position;
+  readonly afterPos: Position;
   /**
-   * The block Position <= startPos.
+   * The last block Position <= startPos.
    */
   firstBlockPos: Position;
 
@@ -36,8 +31,13 @@ export class Suggestion {
     if (selStart === selEnd) {
       throw new Error("Selection is empty");
     }
-    this.startPos = origin.list.positionAt(selStart);
-    this.endPosIncl = origin.list.positionAt(selEnd - 1);
+    // TODO: use hacked closer positions instead, to handle open-vs-closed friction.
+    // selStart >= 1 because the starting block marker can't be selected.
+    this.beforePos = origin.list.positionAt(selStart - 1);
+    this.afterPos =
+      selEnd === origin.list.length
+        ? Order.MAX_POSITION
+        : origin.list.positionAt(selEnd);
 
     const list = new List<string | BlockMarker>(origin.order);
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
@@ -60,7 +60,8 @@ export class Suggestion {
     this.wrapper = new ProseMirrorWrapper(
       this.container,
       { refState: { list, formatting } },
-      (msgs) => this.messages.push(...msgs)
+      (msgs) => this.messages.push(...msgs),
+      { beforePos: this.beforePos, afterPos: this.afterPos }
     );
 
     const buttonDiv = document.createElement("div");
@@ -80,8 +81,8 @@ export class Suggestion {
 
   isInRange(pos: Position): boolean {
     return (
-      this.wrapper.order.compare(this.startPos, pos) <= 0 &&
-      this.wrapper.order.compare(pos, this.endPosIncl) <= 0
+      this.wrapper.order.compare(this.beforePos, pos) < 0 &&
+      this.wrapper.order.compare(pos, this.afterPos) < 0
     );
   }
 
@@ -101,6 +102,9 @@ export class Suggestion {
             break;
           case "setMarker":
             // meta is already applied via the origin's set method.
+            // TODO: for case of == this.firstBlockPos, if the suggestion has changed
+            // the block type, ignore it so that the suggesion's addition can win?
+            // Or re-do our own block marker set, so it will LWW win in the end.
             if (
               Order.equalsPosition(msg.pos, this.firstBlockPos) ||
               this.isInRange(msg.pos)

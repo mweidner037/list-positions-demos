@@ -1,4 +1,5 @@
 import {
+  Anchor,
   TimestampFormatting,
   TimestampMark,
   diffFormats,
@@ -53,6 +54,22 @@ export class ProseMirrorWrapper {
   readonly blockMarkers: List<BlockMarker>;
   readonly formatting: TimestampFormatting;
 
+  /**
+   * A Position that comes before all of those in this.list except the
+   * starting block marker (which be must <= beforePos).
+   *
+   * Insertions at the beginning of the text (after the first block marker)
+   * will be between beforePos and the following Position.
+   */
+  readonly beforePos: Position;
+  /**
+   * A Position that comes after all of those in this.list.
+   *
+   * Insertions at the end of this.list will be between the preceding Position
+   * and afterPos.
+   */
+  readonly afterPos: Position;
+
   private selection: ListSelection;
 
   // Block markers that we've rendered and whose block hasn't changed.
@@ -86,7 +103,11 @@ export class ProseMirrorWrapper {
             formatting: TimestampFormatting;
           };
         },
-    readonly onLocalChange: (msgs: Message[]) => void
+    readonly onLocalChange: (msgs: Message[]) => void,
+    options?: {
+      beforePos?: Position;
+      afterPos?: Position;
+    }
   ) {
     if ("savedState" in initialState) {
       this.order = new Order();
@@ -104,7 +125,24 @@ export class ProseMirrorWrapper {
       for (const [pos, value] of this.list.entries()) {
         if (typeof value === "object") this.blockMarkers.set(pos, value);
       }
+
+      if (this.list.length === 0 || typeof this.list.getAt(0) !== "object") {
+        throw new Error("Loaded state does not start with a block marker");
+      }
     }
+
+    if (options?.beforePos !== undefined) {
+      this.beforePos = options.beforePos;
+      if (this.order.compare(this.list.positionAt(0), this.beforePos) > 0) {
+        throw new Error("The first block marker must be <= beforePos");
+      }
+    } else this.beforePos = this.list.positionAt(0);
+    if (options?.afterPos !== undefined) {
+      this.afterPos = options.afterPos;
+      if (this.order.compare(this.beforePos, this.afterPos) >= 0) {
+        throw new Error("afterPos must be >= beforePos");
+      }
+    } else this.afterPos = Order.MAX_POSITION;
 
     // Set cursor to front of first char.
     this.selection = {
@@ -151,8 +189,8 @@ export class ProseMirrorWrapper {
 
   set(startPos: Position, chars: string): void {
     this.update(() => {
-      if (this.order.compare(startPos, this.blockMarkers.positionAt(0)) < 0) {
-        throw new Error("Cannot set a Position before the first block");
+      if (this.order.compare(startPos, this.beforePos) <= 0) {
+        throw new Error("Cannot set a Position <= beforePos");
       }
       this.list.set(startPos, ...chars);
       this.markDirty(startPos, {
@@ -200,10 +238,7 @@ export class ProseMirrorWrapper {
     chars: string
   ): [startPos: Position, createdBunch: BunchMeta | null] {
     return this.update(() => {
-      if (listIndex === 0) {
-        throw new Error("Cannot insert before the first block");
-      }
-      const [startPos, createdBunch] = this.list.insertAt(listIndex, ...chars);
+      const [startPos, createdBunch] = this.listInsertAt(listIndex, ...chars);
       // Since the Positions are new, their can't be any blocks in the middle:
       // don't need to provide endPos.
       this.markDirty(startPos);
@@ -216,11 +251,37 @@ export class ProseMirrorWrapper {
     marker: BlockMarker
   ): [pos: Position, createdBunch: BunchMeta | null] {
     return this.update(() => {
-      const [pos, createdBunch] = this.list.insertAt(listIndex, marker);
+      const [pos, createdBunch] = this.listInsertAt(listIndex, marker);
       this.blockMarkers.set(pos, marker);
       this.markDirty(pos);
       return [pos, createdBunch];
     });
+  }
+
+  /**
+   * Internally, use this method instead of calling this.list.insertAt.
+   * (It accounts for beforePos, afterPos, and the first block marker.)
+   */
+  private listInsertAt(
+    index: number,
+    ...values: (BlockMarker | string)[]
+  ): [startPos: Position, createdBunch: BunchMeta | null] {
+    if (index === 0) {
+      throw new Error("Cannot insert before the first block");
+    }
+    if (index === 1) {
+      // Use beforePos as the previous position, instead of list.positionAt(0).
+      return this.list.insert(this.beforePos, ...values);
+    } else if (index === this.list.length) {
+      // Use afterPos as the next Position, instead of Order.MAX_POSITION.
+      const [startPos, createdBunch] = this.order.createPositions(
+        this.list.positionAt(this.list.length - 1),
+        this.afterPos,
+        values.length
+      );
+      this.list.set(startPos, ...values);
+      return [startPos, createdBunch];
+    } else return this.list.insertAt(index, ...values);
   }
 
   addMark(mark: TimestampMark): void {
@@ -489,7 +550,7 @@ export class ProseMirrorWrapper {
                 if (b !== 0) {
                   // Insert new block marker before the block's content.
                   const marker: BlockMarker = { type: blockChild.type.name };
-                  const [pos, createdBunch] = this.list.insertAt(
+                  const [pos, createdBunch] = this.listInsertAt(
                     insIndex,
                     marker
                   );
@@ -520,7 +581,7 @@ export class ProseMirrorWrapper {
           const fromIndex = this.indexOfPmPos(tr.docs[s], step.from);
           const toIndex = this.indexOfPmPos(tr.docs[s], step.to);
 
-          const span = spanFromSlice(this.list, fromIndex, toIndex, "after");
+          const span = this.spanFromSlice(fromIndex, toIndex, "after");
           const mark = this.formatting.newMark(
             span.start,
             span.end,
@@ -571,7 +632,7 @@ export class ProseMirrorWrapper {
       switch (child.type.name) {
         case "text":
           // Simple text insertion.
-          const [startPos, createdBunch] = this.list.insertAt(
+          const [startPos, createdBunch] = this.listInsertAt(
             index,
             ...child.text!
           );
@@ -593,8 +654,7 @@ export class ProseMirrorWrapper {
             pmFormat
           );
           for (const [key, value] of needsFormat) {
-            const span = spanFromSlice(
-              this.list,
+            const span = this.spanFromSlice(
               index,
               index + child.text!.length,
               "after"
@@ -619,6 +679,25 @@ export class ProseMirrorWrapper {
       }
     }
     return index;
+  }
+
+  /**
+   * Internally, use this method instead of calling spanFromSlice(this.list, ...).
+   * (It accounts for beforePos and afterPos.)
+   */
+  private spanFromSlice(
+    fromIndex: number,
+    toIndex: number,
+    expand?: "after" | "before" | "both" | "none"
+  ): { start: Anchor; end: Anchor } {
+    let { start, end } = spanFromSlice(this.list, fromIndex, toIndex, expand);
+    if (Order.equalsPosition(start.pos, this.list.positionAt(0))) {
+      start = { pos: this.beforePos, before: start.before };
+    }
+    if (Order.equalsPosition(end.pos, Order.MAX_POSITION)) {
+      end = { pos: this.afterPos, before: end.before };
+    }
+    return { start, end };
   }
 
   /**
