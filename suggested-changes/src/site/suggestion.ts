@@ -1,5 +1,12 @@
 import { TimestampFormatting } from "list-formatting";
-import { List, Order, Position } from "list-positions";
+import {
+  BunchIDs,
+  BunchMeta,
+  BunchNode,
+  List,
+  Order,
+  Position,
+} from "list-positions";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
@@ -9,6 +16,14 @@ export class Suggestion {
   readonly wrapper: ProseMirrorWrapper;
   readonly messages: Message[] = [];
 
+  /**
+   * Our range in origin.list is described as an *open* interval (beforePos, afterPos).
+   * Openness makes it easy to handle prepends and appends, but from the user's
+   * perspective, a closed interval makes more sense.
+   * To emulate that, we use hacked beforePos/afterPos that try to stay next to
+   * the closed interval even when there are concurrent edits next to
+   * our range in origin.list.
+   */
   readonly beforePos: Position;
   readonly afterPos: Position;
   /**
@@ -31,13 +46,6 @@ export class Suggestion {
     if (selStart === selEnd) {
       throw new Error("Selection is empty");
     }
-    // TODO: use hacked closer positions instead, to handle open-vs-closed friction.
-    // selStart >= 1 because the starting block marker can't be selected.
-    this.beforePos = origin.list.positionAt(selStart - 1);
-    this.afterPos =
-      selEnd === origin.list.length
-        ? Order.MAX_POSITION
-        : origin.list.positionAt(selEnd);
 
     const list = new List<string | BlockMarker>(origin.order);
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
@@ -55,6 +63,10 @@ export class Suggestion {
     const formatting = new TimestampFormatting(list.order);
     // TODO: optimization: only extract formatting spans in range.
     formatting.load(origin.formatting.save());
+
+    // Set beforePos and afterPos.
+    this.beforePos = this.createBeforePos(list.order, selStart);
+    this.afterPos = this.createAfterPos(list.order, selEnd);
 
     // Construct our GUI.
     this.wrapper = new ProseMirrorWrapper(
@@ -77,6 +89,102 @@ export class Suggestion {
     this.container.appendChild(buttonDiv);
 
     parent.appendChild(this.container);
+  }
+
+  private createBeforePos(order: Order, selStart: number): Position {
+    // The first position in our list.
+    const startPos = this.origin.list.positionAt(selStart);
+
+    // Create a Position before startPos that is hacked to be closer to it
+    // than almost any concurrent or future Position.
+    // We use the fact that Order replicaIDs always use chars < "|".
+
+    // Find the last left child of startPos, if any.
+    const offset = 2 * startPos.innerIndex;
+    const node = order.getNodeFor(startPos);
+    let lastChild: BunchNode | null = null;
+    for (let i = node.childrenLength - 1; i >= 0; i--) {
+      const child = node.getChild(i);
+      if (child.offset === offset) {
+        lastChild = child;
+        break;
+      }
+    }
+    // If this hack was used before, lastChild might already start with a pipe.
+    // Use one more pipe than it.
+    let existingPipes = 0;
+    if (lastChild !== null) {
+      for (let i = 0; i < lastChild.bunchID.length; i++) {
+        if (lastChild.bunchID[i] === "|") existingPipes++;
+        else break;
+      }
+    }
+    // Make a bunchID out of the pipes and a random string.
+    const pipes = new Array(existingPipes + 1).fill("|").join("");
+    const bunchID = pipes + BunchIDs.newReplicaID();
+    // Create a bunch and record its BunchMeta.
+    const meta: BunchMeta = {
+      bunchID,
+      parentID: node.bunchID,
+      offset,
+    };
+    order.receive([meta]);
+
+    const beforePos: Position = {
+      bunchID,
+      innerIndex: 0,
+    };
+    // TODO: use dedicated meta message instead of this empty set.
+    this.messages.push({ type: "set", startPos: beforePos, chars: "", meta });
+    return beforePos;
+  }
+
+  private createAfterPos(order: Order, selEnd: number): Position {
+    // The last position in our list.
+    const endPosIncl = this.origin.list.positionAt(selEnd - 1);
+
+    // Create a Position after endPosIncl that is hacked to be closer to it
+    // than almost any concurrent or future Position.
+    // We use the fact that Order replicaIDs always use chars > " ".
+
+    // Find the first right child of endPosIncl, if any.
+    const offset = 2 * endPosIncl.innerIndex + 1;
+    const node = order.getNodeFor(endPosIncl);
+    let firstChild: BunchNode | null = null;
+    for (let i = 0; i < node.childrenLength; i++) {
+      const child = node.getChild(i);
+      if (child.offset === offset) {
+        firstChild = child;
+        break;
+      }
+    }
+    // If this hack was used before, firstChild might already start with a space.
+    // Use one more space than it.
+    let existingSpaces = 0;
+    if (firstChild !== null) {
+      for (let i = 0; i < firstChild.bunchID.length; i++) {
+        if (firstChild.bunchID[i] === " ") existingSpaces++;
+        else break;
+      }
+    }
+    // Make a bunchID out of the spaces and a random string.
+    const spaces = new Array(existingSpaces + 1).fill(" ").join("");
+    const bunchID = spaces + BunchIDs.newReplicaID();
+    // Create a bunch and record its BunchMeta.
+    const meta: BunchMeta = {
+      bunchID,
+      parentID: node.bunchID,
+      offset,
+    };
+    order.receive([meta]);
+
+    const afterPos: Position = {
+      bunchID,
+      innerIndex: 0,
+    };
+    // TODO: use dedicated meta message instead of this empty set.
+    this.messages.push({ type: "set", startPos: afterPos, chars: "", meta });
+    return afterPos;
   }
 
   isInRange(pos: Position): boolean {

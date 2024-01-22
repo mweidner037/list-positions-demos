@@ -139,7 +139,7 @@ export class ProseMirrorWrapper {
       this.list.set(startPos, ...chars);
       this.markDirty(startPos, {
         bunchID: startPos.bunchID,
-        innerIndex: startPos.innerIndex + chars.length - 1,
+        innerIndex: startPos.innerIndex + Math.max(0, chars.length - 1),
       });
     });
   }
