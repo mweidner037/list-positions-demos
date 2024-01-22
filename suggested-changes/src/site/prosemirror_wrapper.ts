@@ -728,12 +728,12 @@ export class ProseMirrorWrapper {
    * Returns the index in this.list corresponding to
    * the given ProseMirror position.
    *
-   * - If pmPos points to the start of a block,
-   * the index points to that block's marker.
-   * (TODO: when would this even happen? We never invert this case.)
    * - If pmPos points to the end of a block (after its text),
    * the index points to the next block's marker, as expected for insertions
    * before a Position.
+   * - If pmPos points to the start of a block,
+   * the index points to that block's marker. (Not expected to occur;
+   * pmPosAt doesn't invert this case.)
    *
    * @param doc Must be in sync with this.list.
    */

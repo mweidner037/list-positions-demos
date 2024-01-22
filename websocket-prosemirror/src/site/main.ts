@@ -41,7 +41,7 @@ function send(msgs: Message[]): void {
   }
 }
 
-// TODO: batch delivery, wrapped in wrapper.update().
+// OPT: batch delivery, wrapped in wrapper.update().
 function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
   const msg = JSON.parse(e.data) as Message;
   switch (msg.type) {

@@ -61,7 +61,7 @@ export class Suggestion {
     list.set(this.firstBlockPos, origin.blockMarkers.get(this.firstBlockPos)!);
 
     const formatting = new TimestampFormatting(list.order);
-    // TODO: optimization: only extract formatting spans in range.
+    // OPT: only extract formatting spans in range.
     formatting.load(origin.formatting.save());
 
     // Set beforePos and afterPos.
@@ -239,7 +239,7 @@ export class Suggestion {
             this.wrapper.delete(msg.pos);
             break;
           case "mark":
-            // TODO: only add formatting spans in range.
+            // OPT: only add formatting spans in range.
             this.wrapper.addMark(msg.mark);
             break;
           default:

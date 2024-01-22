@@ -59,7 +59,7 @@ ws.addEventListener("message", welcomeListener);
 
 function onLocalChange(msgs: Message[]) {
   send(msgs);
-  // TODO: use formatting spans to quickly get the affected suggestions,
+  // OPT: use formatting spans to quickly get the affected suggestions,
   // instead of looping over all of them?
   // Or, only update the suggestions in view.
   // Likewise in onWsMessage.
@@ -74,7 +74,7 @@ function send(msgs: Message[]): void {
   }
 }
 
-// TODO: batch delivery, wrapped in wrapper.update().
+// OPT: batch delivery, wrapped in wrapper.update().
 function onWsMessage(e: MessageEvent<string>): void {
   const msg = JSON.parse(e.data) as Message;
   wrapper.applyMessage(msg);
