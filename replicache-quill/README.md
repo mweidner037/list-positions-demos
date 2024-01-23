@@ -2,6 +2,12 @@
 
 # todo-wc
 
+TODO
+
+- rewrite
+- link to template source & license: https://github.com/rocicorp/todo-wc
+- Mention client/.env file for replicache key (gitignored)
+
 This repository contains sample code for [Replicache](https://replicache.dev/). The example uses web-components with a common express server backend. The backend utilizes Express and demonstrates implementations of `push`, `pull`, `poke`, `createSpace`, and `spaceExists` handlers. These are required for the Replicache sync protocol. This library intends to help developers easily experiment with Replicache.
 
 ## 1. Setup
@@ -39,12 +45,12 @@ A render blueprint example is provided to deploy the application.
 Open the `render.yaml` file and add your license key
 
 ```
-- key: VITE_REPLICACHE_LICENSE_KEY 
+- key: VITE_REPLICACHE_LICENSE_KEY
     value: <license_key>
 ```
 
 Commit the changes and follow the direction on [Deploying to Render](https://doc.replicache.dev/deploy-render)
 /client
-/shared 
-/server 
+/shared
+/server
 package.json

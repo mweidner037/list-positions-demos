@@ -1,2 +1,2 @@
 export * from './mutators';
-export * from './todo';
+export * from './rich_text';

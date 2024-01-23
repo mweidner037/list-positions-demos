@@ -18,6 +18,8 @@
     "watch": "concurrently --kill-others 'npm run server' 'npm run check-types -- --watch --preserveWatchOutput' 'sleep 3; npm run dev'"
   },
   "dependencies": {
+    "list-formatting": "^0.3.0",
+    "list-positions": "^0.3.3",
     "nanoid": "^4.0.0",
     "replicache": ">=14.0.3",
     "shared": "^0.1.0"

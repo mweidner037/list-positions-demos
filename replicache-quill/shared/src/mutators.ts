@@ -26,38 +26,71 @@
 // required to get up and running.
 
 import type {WriteTransaction} from 'replicache';
-import {Todo, listTodos, TodoUpdate} from './todo';
+import {
+  idOfMark,
+  type AddMarks,
+  type Bunch,
+  type CreateBunch,
+  type DeleteValues,
+  type SetValues,
+} from './rich_text';
 
 export type M = typeof mutators;
 
 export const mutators = {
-  updateTodo: async (tx: WriteTransaction, update: TodoUpdate) => {
-    // In a real app you may want to validate the incoming data is in fact a
-    // TodoUpdate. Check out https://www.npmjs.com/package/@rocicorp/rails for
-    // some heper functions to do this.
-    const prev = await tx.get<Todo>(`todo/${update.id}`);
-    const next = {...prev, ...update};
-    await tx.set(`todo/${next.id}`, next);
+  createBunch: async (tx: WriteTransaction, update: CreateBunch) => {
+    const existing = await tx.get<Bunch>(`bunch/${update.bunchID}`);
+    if (existing !== undefined) {
+      console.warn('createBunch: Skipping duplicate bunchID:', update.bunchID);
+      return;
+    }
+    const newBunch: Bunch = {...update, values: {}};
+    await tx.set(`bunch/${update.bunchID}`, newBunch);
   },
 
-  deleteTodo: async (tx: WriteTransaction, id: string) => {
-    await tx.del(`todo/${id}`);
+  setValues: async (tx: WriteTransaction, update: SetValues) => {
+    const existing = await tx.get<Bunch>(`bunch/${update.startPos.bunchID}`);
+    if (existing === undefined) {
+      console.error(
+        'setValues: Skipping unknown bunchID:',
+        update.startPos.bunchID,
+      );
+      return;
+    }
+    const values: Record<number, string> = {...existing.values};
+    for (let i = 0; i < update.values.length; i++) {
+      values[i + update.startPos.innerIndex] = update.values[i];
+    }
+    const updated: Bunch = {...existing, values};
+    await tx.set(`bunch/${update.startPos.bunchID}`, updated);
   },
 
-  // This mutator creates a new todo, assigning the next available sort value.
-  //
-  // If two clients create new todos concurrently, they both might choose the
-  // same sort value locally (optimistically). That's fine because later when
-  // the mutator re-runs on the server the two todos will get unique values.
-  //
-  // Replicache will automatically sync the change back to the clients,
-  // reconcile any changes that happened client-side in the meantime, and update
-  // the UI to reflect the changes.
-  createTodo: async (tx: WriteTransaction, todo: Omit<Todo, 'sort'>) => {
-    const todos = await listTodos(tx);
-    todos.sort((t1, t2) => t1.sort - t2.sort);
+  deleteValues: async (tx: WriteTransaction, update: DeleteValues) => {
+    const existing = await tx.get<Bunch>(`bunch/${update.startPos.bunchID}`);
+    if (existing === undefined) {
+      console.error(
+        'setValues: Skipping unknown bunchID:',
+        update.startPos.bunchID,
+      );
+      return;
+    }
+    const values: Record<number, string> = {...existing.values};
+    for (let i = 0; i < update.count; i++) {
+      delete values[i + update.startPos.innerIndex];
+    }
+    const updated: Bunch = {...existing, values};
+    await tx.set(`bunch/${update.startPos.bunchID}`, updated);
+  },
 
-    const maxSort = todos.pop()?.sort ?? 0;
-    await tx.set(`todo/${todo.id}`, {...todo, sort: maxSort + 1});
+  addMarks: async (tx: WriteTransaction, update: AddMarks) => {
+    for (const mark of update.marks) {
+      const id = idOfMark(mark);
+      const existing = await tx.get<Bunch>(`mark/${id}`);
+      if (existing !== undefined) {
+        console.warn('addMarks: Skipping duplicate mark ID:', id);
+        continue;
+      }
+      await tx.set(`mark/${id}`, mark);
+    }
   },
 };
