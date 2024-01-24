@@ -58,20 +58,14 @@ async function init() {
   const richList = QuillWrapper.newRichList();
   await r.query(async tx => {
     const bunches = await allBunches(tx);
-    // First need to load all metas.
-    richList.order.receive(
-      bunches.map(bunch => ({
-        bunchID: bunch.bunchID,
-        parentID: bunch.parentID,
-        offset: bunch.offset,
-      })),
-    );
+    // First need to load all metas together, to avoid dependency ordering concerns.
+    richList.order.receive(bunches.map(bunch => bunch.meta));
     // Now load all values.
     for (const bunch of bunches) {
       // TODO: In list-positions, provide method to set a whole bunch's values quickly.
       for (const [indexStr, char] of Object.entries(bunch.values)) {
         const innerIndex = Number.parseInt(indexStr);
-        richList.list.set({bunchID: bunch.bunchID, innerIndex}, char);
+        richList.list.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
       }
     }
 
@@ -139,17 +133,13 @@ async function init() {
             const op = diffOp as ExperimentalDiffOperationAdd<string, Bunch>;
             wrapperOps.push({
               type: 'meta',
-              meta: {
-                bunchID: op.newValue.bunchID,
-                parentID: op.newValue.parentID,
-                offset: op.newValue.offset,
-              },
+              meta: op.newValue.meta,
             });
             for (const [indexStr, char] of Object.entries(op.newValue.values)) {
               const innerIndex = Number.parseInt(indexStr);
               wrapperOps.push({
                 type: 'set',
-                startPos: {bunchID: op.newValue.bunchID, innerIndex},
+                startPos: {bunchID: op.newValue.meta.bunchID, innerIndex},
                 chars: char,
               });
             }
@@ -170,7 +160,7 @@ async function init() {
               if (newChar !== oldChar) {
                 wrapperOps.push({
                   type: 'set',
-                  startPos: {bunchID: op.newValue.bunchID, innerIndex},
+                  startPos: {bunchID: op.newValue.meta.bunchID, innerIndex},
                   chars: newChar,
                 });
               }
@@ -180,7 +170,7 @@ async function init() {
               wrapperOps.push({
                 type: 'delete',
                 startPos: {
-                  bunchID: op.newValue.bunchID,
+                  bunchID: op.newValue.meta.bunchID,
                   innerIndex: Number.parseFloat(indexStr),
                 },
                 count: 1,

@@ -4,7 +4,7 @@ Basic collaborative rich-text editor using [list-positions](https://github.com/m
 
 The editor state is stored in Replicache under two prefixes:
 
-- `bunch/<bunchID>` for the `List` state, grouped by bunch. Each entry stores a bunch's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata) fields, plus its current values (chars) as an object `{ [innerIndex: number]: string }`. (TODO: explicitly separate out meta object for ease of use; change record type)
+- `bunch/<bunchID>` for the `List` state, grouped by bunch. Each entry stores a bunch's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata) fields, plus its current values (chars) as an object `{ [innerIndex: number]: string }`.
 - `mark/<mark ID>` for the formatting marks. Each entry stores a TimestampMark, keyed by an arbitrary unique ID.
 
 Replicache mutators correspond to the basic rich-text operations:

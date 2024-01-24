@@ -3,10 +3,8 @@ import type {BunchMeta, Position} from 'list-positions';
 import type {ReadTransaction} from 'replicache';
 
 export type Bunch = {
-  bunchID: string;
-  parentID: string;
-  offset: number;
-  values: Record<number, string>;
+  meta: BunchMeta;
+  values: {[innerIndex: number]: string};
 };
 
 export type CreateBunch = BunchMeta;

@@ -44,7 +44,7 @@ export const mutators = {
       console.warn('createBunch: Skipping duplicate bunchID:', update.bunchID);
       return;
     }
-    const newBunch: Bunch = {...update, values: {}};
+    const newBunch: Bunch = {meta: update, values: {}};
     await tx.set(`bunch/${update.bunchID}`, newBunch);
   },
 
