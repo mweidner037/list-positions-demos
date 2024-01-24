@@ -1,14 +1,22 @@
-![Replicache logo](https://uploads-ssl.webflow.com/623a2f46e064937599256c2d/6269e72c61073c3d561a5015_Lockup%20v2.svg)
+# Replicache-Quill
 
-# todo-wc
+Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [Replicache](https://replicache.dev/) client-side sync framework, and [Quill](https://quilljs.com/).
 
-TODO
+The editor state is stored in Replicache under two prefixes:
 
-- rewrite
-- link to template source & license: https://github.com/rocicorp/todo-wc
-- Mention client/.env file for replicache key (gitignored)
+- `bunch/<bunchID>` for the `List` state, grouped by bunch. Each entry stores a bunch's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata) fields, plus its current values (chars) as an object `{ [innerIndex: number]: string }`. (TODO: explicitly separate out meta object for ease of use; change record type)
+- `mark/<mark ID>` for the formatting marks. Each entry stores a TimestampMark, keyed by an arbitrary unique ID.
 
-This repository contains sample code for [Replicache](https://replicache.dev/). The example uses web-components with a common express server backend. The backend utilizes Express and demonstrates implementations of `push`, `pull`, `poke`, `createSpace`, and `spaceExists` handlers. These are required for the Replicache sync protocol. This library intends to help developers easily experiment with Replicache.
+Replicache mutators correspond to the basic rich-text operations:
+
+- `createBunch` to create a new bunch with its BunchMeta.
+- `setValues` to set some Position-value pairs within a bunch.
+- `deleteValues` to delete some Position-value pairs within a bunch.
+- `addMarks` to add a formatting mark.
+
+See `shared/src/rich_text.ts` and `shared/src/mutators.ts`.
+
+The instructions below are from Replicache's [todo-wc](https://github.com/rocicorp/todo-wc) example, which we used as a template.
 
 ## 1. Setup
 
@@ -23,6 +31,8 @@ $ npx replicache get-license
 ```bash
 $ export VITE_REPLICACHE_LICENSE_KEY="<your license key>"
 ```
+
+(Or put it in `client/.env`, which is gitignored.)
 
 #### Install and Build
 
