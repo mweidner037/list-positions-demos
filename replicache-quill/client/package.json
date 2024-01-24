@@ -1,0 +1,41 @@
+{
+  "name": "client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint --ext .ts,.tsx .",
+    "dev": "vite",
+    "check-types": "tsc --noEmit",
+    "build": "tsc && vite build",
+    "build:server": "cd ../server && npm run build",
+    "preview": "vite preview",
+    "format": "prettier --write './src/**/*.{js,jsx,json,ts,tsx,html,css,md}' '*.{cjs,js,jsx,json,ts,tsx,html,css,md}'",
+    "check-format": "prettier --check './src/**/*.{js,jsx,json,ts,tsx,html,css,md}' '*.{cjs,js,jsx,json,ts,tsx,html,css,md}'",
+    "clean": "rm -rf ./dist; mkdir -p ./dist",
+    "prod": "cp -r ./dist/ ../server/dist/; cd ../server; npm run prod",
+    "server": "cd ../server && npm run dev",
+    "watch": "concurrently --kill-others 'npm run server' 'npm run check-types -- --watch --preserveWatchOutput' 'sleep 3; npm run dev'"
+  },
+  "dependencies": {
+    "list-formatting": "^0.3.0",
+    "list-positions": "^0.3.3",
+    "nanoid": "^4.0.0",
+    "quill": "^1.3.6",
+    "replicache": ">=14.0.3",
+    "shared": "^0.1.0"
+  },
+  "devDependencies": {
+    "@types/quill": "^1.3.10",
+    "@rocicorp/prettier-config": "^0.1.1",
+    "@rocicorp/eslint-config": "^0.1.2",
+    "prettier": "^2.2.1",
+    "typescript": "^4.6.4",
+    "vite": "^3.0.7",
+    "concurrently": "^7.4.0"
+  },
+  "eslintConfig": {
+    "extends": "@rocicorp/eslint-config"
+  },
+  "prettier": "@rocicorp/prettier-config"
+}
