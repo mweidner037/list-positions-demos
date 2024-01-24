@@ -1,5 +1,5 @@
 import type {TimestampMark} from 'list-formatting';
-import type {Position} from 'list-positions';
+import type {BunchMeta, Position} from 'list-positions';
 import type {ReadTransaction} from 'replicache';
 
 export type Bunch = {
@@ -9,11 +9,7 @@ export type Bunch = {
   values: Record<number, string>;
 };
 
-export type CreateBunch = {
-  bunchID: string;
-  parentID: string;
-  offset: number;
-};
+export type CreateBunch = BunchMeta;
 
 export type SetValues = {
   startPos: Position;
