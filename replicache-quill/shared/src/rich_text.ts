@@ -32,3 +32,7 @@ export function idOfMark(mark: TimestampMark): string {
 export type AddMarks = {
   marks: TimestampMark[];
 };
+
+export async function allMarks(tx: ReadTransaction) {
+  return await tx.scan<TimestampMark>({prefix: 'mark/'}).values().toArray();
+}

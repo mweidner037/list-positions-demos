@@ -4,7 +4,6 @@ import Quill, {DeltaStatic, Delta as DeltaType} from 'quill';
 import {
   FormattedValues,
   RichList,
-  RichListSavedState,
   TimestampMark,
   sliceFromSpan,
 } from 'list-formatting';
@@ -34,6 +33,23 @@ export type WrapperOp =
   | {type: 'marks'; marks: TimestampMark[]};
 
 export class QuillWrapper {
+  /**
+   * Call to get an empty RichList, load initial state, then
+   * pass to constructor.
+   */
+  static newRichList(): RichList<string> {
+    const richList = new RichList<string>({expandRules});
+
+    // Create initial "\n", required by Quill.
+    // TODO: This state is not actually stored in Replicache.
+    // That's okay because we never mutate it (except for marks,
+    // stored separately), but it is confusing.
+    // Would be nicer to create this char on the server in createSpace().
+    richList.load(makeInitialState());
+
+    return richList;
+  }
+
   readonly editor: Quill;
   /**
    * Instead of editing this directly, use the applyOps method.
@@ -52,13 +68,18 @@ export class QuillWrapper {
      */
     readonly onLocalOps: (ops: WrapperOp[]) => void,
     /**
-     * Must end in "\n" to match Quill, even if otherwise empty.
-     *
-     * Okay if marks are not in compareMarks order (weaker than RichListSavedState reqs).
+     * Must come from newRichList and still have the trailing "\n
+     * .
      */
-    initialState: RichListSavedState<string>,
+    richList: RichList<string>,
   ) {
-    this.richList = new RichList({expandRules});
+    this.richList = richList;
+    if (
+      this.richList.list.length === 0 ||
+      this.richList.list.getAt(this.richList.list.length - 1) !== '\n'
+    ) {
+      throw new Error('Bad initial state: must end in "\n" to match Quill');
+    }
 
     // Setup Quill.
     const editorContainer = document.getElementById('editor') as HTMLDivElement;
@@ -76,20 +97,6 @@ export class QuillWrapper {
       },
       formats: ['bold', 'italic', 'header', 'list'],
     });
-
-    // Load initial state into richList.
-    this.richList.order.load(initialState.order);
-    this.richList.list.load(initialState.list);
-    // initialState.marks is not a saved state; add directly.
-    for (const mark of initialState.formatting) {
-      this.richList.formatting.addMark(mark);
-    }
-    if (
-      this.richList.list.length === 0 ||
-      this.richList.list.getAt(this.richList.list.length - 1) !== '\n'
-    ) {
-      throw new Error('Bad initial state: must end in "\n" to match Quill');
-    }
 
     // Sync initial state to Quill.
     this.editor.updateContents(
@@ -387,4 +394,18 @@ function formattingToQuillAttr(
     } else ret[key] = value;
   }
   return ret;
+}
+
+/**
+ * Fake initial saved state that's identical on all replicas: a single
+ * "\n", to match Quill's initial state.
+ */
+function makeInitialState() {
+  // TODO: Accept an optional bunchID in Order.createPositions instead, so can do this
+  // directly in newRichList instead of saving and loading.
+  const richList = new RichList<string>({
+    order: new Order({newBunchID: () => 'INIT'}),
+  });
+  richList.list.insertAt(0, '\n');
+  return richList.save();
 }

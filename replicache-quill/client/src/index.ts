@@ -1,11 +1,10 @@
-import {RichList, TimestampMark} from 'list-formatting';
-import {Order} from 'list-positions';
+import {TimestampMark} from 'list-formatting';
 import {
   ExperimentalDiffOperationAdd,
   ExperimentalDiffOperationChange,
   Replicache,
 } from 'replicache';
-import {Bunch, mutators} from 'shared';
+import {Bunch, allBunches, allMarks, mutators} from 'shared';
 import {QuillWrapper, WrapperOp} from './quill_wrapper';
 import {createSpace, spaceExists} from './space';
 
@@ -54,9 +53,37 @@ async function init() {
     }
   };
 
-  const quillWrapper = new QuillWrapper(onLocalOps, makeInitialState());
+  // Load initial state from Replicache.
 
-  // Send Quill changes to Replicache.
+  const richList = QuillWrapper.newRichList();
+  await r.query(async tx => {
+    const bunches = await allBunches(tx);
+    // First need to load all metas.
+    richList.order.receive(
+      bunches.map(bunch => ({
+        bunchID: bunch.bunchID,
+        parentID: bunch.parentID,
+        offset: bunch.offset,
+      })),
+    );
+    // Now load all values.
+    for (const bunch of bunches) {
+      // TODO: In list-positions, provide method to set a whole bunch's values quickly.
+      for (const [indexStr, char] of Object.entries(bunch.values)) {
+        const innerIndex = Number.parseInt(indexStr);
+        richList.list.set({bunchID: bunch.bunchID, innerIndex}, char);
+      }
+    }
+
+    // Load all marks. They are not necessarily in compareMarks order,
+    // so call addMarks in a loop instead of load (TODO: subject to change).
+    const marks = await allMarks(tx);
+    for (const mark of marks) richList.formatting.addMark(mark);
+  });
+
+  const quillWrapper = new QuillWrapper(onLocalOps, richList);
+
+  // Send future Quill changes to Replicache.
   // Use a queue to avoid reordered mutations (since onLocalOps is sync
   // but mutations are async).
 
@@ -101,8 +128,7 @@ async function init() {
     }
   }
 
-  // Send Replicache changes to Quill.
-  // TODO: should we treat the initial state separately?
+  // Send future Replicache changes to Quill.
 
   r.experimentalWatch(diff => {
     const wrapperOps: WrapperOp[] = [];
@@ -186,15 +212,3 @@ async function init() {
   });
 }
 await init();
-
-/**
- * Fake initial saved state that's identical on all replicas: a single
- * "\n", to match Quill's initial state.
- */
-function makeInitialState() {
-  const richList = new RichList<string>({
-    order: new Order({newBunchID: () => 'INIT'}),
-  });
-  richList.list.insertAt(0, '\n');
-  return richList.save();
-}
