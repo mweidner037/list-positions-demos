@@ -1,6 +1,6 @@
 import { ClientFetchResult, TriplitClient } from "@triplit/client";
 import { RichList } from "list-formatting";
-import { Order, Position } from "list-positions";
+import { Order, Position, expandPositions } from "list-positions";
 import { schema } from "../triplit/schema";
 import { QuillWrapper, WrapperOp } from "./quill_wrapper";
 
@@ -134,7 +134,7 @@ async function sendLocalOps() {
               break;
             case "set":
               let i = 0;
-              for (const pos of Order.startPosToArray(
+              for (const pos of expandPositions(
                 op.startPos,
                 op.chars.length
               )) {

@@ -7,7 +7,7 @@ import {
   TimestampMark,
   sliceFromSpan,
 } from 'list-formatting';
-import {BunchMeta, Order, Position} from 'list-positions';
+import {BunchMeta, Order, Position, expandPositions} from 'list-positions';
 import 'quill/dist/quill.snow.css';
 
 const Delta: typeof DeltaType = Quill.import('delta');
@@ -201,7 +201,7 @@ export class QuillWrapper {
           allMetas.push(op.meta);
         }
       }
-      this.richList.order.receive(allMetas);
+      this.richList.order.addMetas(allMetas);
 
       // Process the non-"meta" ops.
       let pendingDelta: DeltaStatic = new Delta();
@@ -232,7 +232,7 @@ export class QuillWrapper {
             break;
           case 'delete':
             // OPT: group same-bunch deletions.
-            for (const pos of Order.startPosToArray(op.startPos, op.count)) {
+            for (const pos of expandPositions(op.startPos, op.count)) {
               if (this.richList.list.has(pos)) {
                 const index = this.richList.list.indexOfPosition(pos);
                 this.richList.list.delete(pos);

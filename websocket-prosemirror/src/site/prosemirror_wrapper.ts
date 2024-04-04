@@ -4,7 +4,13 @@ import {
   diffFormats,
   spanFromSlice,
 } from "list-formatting";
-import { BunchIDs, BunchMeta, List, Order, Position } from "list-positions";
+import {
+  BunchMeta,
+  List,
+  Order,
+  Position,
+  positionEquals,
+} from "list-positions";
 import { pcBaseKeymap, toggleMark } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Attrs, Fragment, Mark, Node, Slice } from "prosemirror-model";
@@ -25,6 +31,7 @@ import { BlockMarker, BlockTextSavedState } from "../common/block_text";
 import { Message } from "../common/messages";
 import { schema } from "./schema";
 
+import { maybeRandomString } from "maybe-random-string";
 import "prosemirror-view/style/prosemirror.css";
 
 const pmKey = "ProseMirrorWrapper";
@@ -86,7 +93,7 @@ export class ProseMirrorWrapper {
 
     this.loadInternal(initialState);
 
-    this.replicaID = BunchIDs.newReplicaID();
+    this.replicaID = maybeRandomString();
 
     // Set cursor to front of first char.
     this.selection = {
@@ -181,7 +188,7 @@ export class ProseMirrorWrapper {
   delete(pos: Position): void {
     this.update(() => {
       if (this.list.has(pos)) {
-        if (Order.equalsPosition(pos, this.blockMarkers.positionAt(0))) {
+        if (positionEquals(pos, this.blockMarkers.positionAt(0))) {
           throw new Error("Cannot delete the first block marker");
         }
         this.list.delete(pos);

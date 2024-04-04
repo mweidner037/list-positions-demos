@@ -46,11 +46,11 @@ function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
   const msg = JSON.parse(e.data) as Message;
   switch (msg.type) {
     case "set":
-      if (msg.meta) wrapper.order.receive([msg.meta]);
+      if (msg.meta) wrapper.order.addMetas([msg.meta]);
       wrapper.set(msg.startPos, msg.chars);
       break;
     case "setMarker":
-      if (msg.meta) wrapper.order.receive([msg.meta]);
+      if (msg.meta) wrapper.order.addMetas([msg.meta]);
       wrapper.setMarker(msg.pos, msg.marker);
       break;
     case "delete":

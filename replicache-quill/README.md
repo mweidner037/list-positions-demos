@@ -46,8 +46,6 @@ $ npm install; npm run build;
 $ npm run watch --ws
 ```
 
-Provides an example integrating replicache with react in a simple todo application.
-
 ## Deploying to Render
 
 A render blueprint example is provided to deploy the application.

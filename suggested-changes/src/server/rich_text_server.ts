@@ -93,7 +93,7 @@ export class RichTextServer {
     const msg = JSON.parse(data) as Message;
     switch (msg.type) {
       case "set":
-        if (msg.meta) this.order.receive([msg.meta]);
+        if (msg.meta) this.order.addMetas([msg.meta]);
         this.text.set(msg.startPos, ...msg.chars);
         this.echo(ws, data);
         // Because a Position is only ever set once (when it's created) and
@@ -103,7 +103,7 @@ export class RichTextServer {
         // telling it how to repair its optimistically-updated state.
         break;
       case "setMarker":
-        if (msg.meta) this.order.receive([msg.meta]);
+        if (msg.meta) this.order.addMetas([msg.meta]);
         this.blockMarkers.set(msg.pos, msg.marker);
         this.echo(ws, data);
         // Because a Position is only ever set once (when it's created) and

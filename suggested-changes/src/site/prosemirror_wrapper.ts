@@ -5,7 +5,14 @@ import {
   diffFormats,
   spanFromSlice,
 } from "list-formatting";
-import { BunchIDs, BunchMeta, List, Order, Position } from "list-positions";
+import {
+  BunchMeta,
+  List,
+  MAX_POSITION,
+  Order,
+  Position,
+  positionEquals,
+} from "list-positions";
 import { pcBaseKeymap, toggleMark } from "prosemirror-commands";
 import { keydownHandler } from "prosemirror-keymap";
 import { Attrs, Fragment, Mark, Node, Slice } from "prosemirror-model";
@@ -26,6 +33,7 @@ import { BlockMarker, BlockTextSavedState } from "../common/block_text";
 import { Message } from "../common/messages";
 import { schema } from "./schema";
 
+import { maybeRandomString } from "maybe-random-string";
 import "prosemirror-view/style/prosemirror.css";
 
 const pmKey = "ProseMirrorWrapper";
@@ -148,9 +156,9 @@ export class ProseMirrorWrapper {
       if (this.order.compare(this.beforePos, this.afterPos) >= 0) {
         throw new Error("afterPos must be >= beforePos");
       }
-    } else this.afterPos = Order.MAX_POSITION;
+    } else this.afterPos = MAX_POSITION;
 
-    this.replicaID = BunchIDs.newReplicaID();
+    this.replicaID = maybeRandomString();
 
     // Set cursor to front of first char.
     this.selection = {
@@ -242,7 +250,7 @@ export class ProseMirrorWrapper {
   delete(pos: Position): void {
     this.update(() => {
       if (this.list.has(pos)) {
-        if (Order.equalsPosition(pos, this.blockMarkers.positionAt(0))) {
+        if (positionEquals(pos, this.blockMarkers.positionAt(0))) {
           throw new Error("Cannot delete the first block marker");
         }
         this.list.delete(pos);
@@ -318,11 +326,11 @@ export class ProseMirrorWrapper {
   applyMessage(msg: Message) {
     switch (msg.type) {
       case "set":
-        if (msg.meta) this.order.receive([msg.meta]);
+        if (msg.meta) this.order.addMetas([msg.meta]);
         this.set(msg.startPos, msg.chars);
         break;
       case "setMarker":
-        if (msg.meta) this.order.receive([msg.meta]);
+        if (msg.meta) this.order.addMetas([msg.meta]);
         this.setMarker(msg.pos, msg.marker);
         break;
       case "delete":
@@ -715,10 +723,10 @@ export class ProseMirrorWrapper {
     expand?: "after" | "before" | "both" | "none"
   ): { start: Anchor; end: Anchor } {
     let { start, end } = spanFromSlice(this.list, fromIndex, toIndex, expand);
-    if (Order.equalsPosition(start.pos, this.list.positionAt(0))) {
+    if (positionEquals(start.pos, this.list.positionAt(0))) {
       start = { pos: this.beforePos, before: start.before };
     }
-    if (Order.equalsPosition(end.pos, Order.MAX_POSITION)) {
+    if (positionEquals(end.pos, MAX_POSITION)) {
       end = { pos: this.afterPos, before: end.before };
     }
     return { start, end };

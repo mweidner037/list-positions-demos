@@ -123,7 +123,7 @@ export class QuillWrapper {
         switch (msg.type) {
           case "set":
             if (msg.meta) {
-              this.richList.order.receive([msg.meta]);
+              this.richList.order.addMetas([msg.meta]);
             }
             // Sets are always nontrivial.
             // Because the server enforces causal ordering, bunched values

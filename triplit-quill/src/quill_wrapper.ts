@@ -194,7 +194,7 @@ export class QuillWrapper {
           allMetas.push(op.meta);
         }
       }
-      this.richList.order.receive(allMetas);
+      this.richList.order.addMetas(allMetas);
 
       // Process the non-"meta" ops.
       let pendingDelta: DeltaStatic = new Delta();

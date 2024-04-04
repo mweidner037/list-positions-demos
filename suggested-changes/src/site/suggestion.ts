@@ -1,12 +1,13 @@
 import { TimestampFormatting } from "list-formatting";
 import {
-  BunchIDs,
   BunchMeta,
   BunchNode,
   List,
   Order,
   Position,
+  positionEquals,
 } from "list-positions";
+import { maybeRandomString } from "maybe-random-string";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
@@ -121,14 +122,14 @@ export class Suggestion {
     }
     // Make a bunchID out of the pipes and a random string.
     const pipes = new Array(existingPipes + 1).fill("|").join("");
-    const bunchID = pipes + BunchIDs.newReplicaID();
+    const bunchID = pipes + maybeRandomString();
     // Create a bunch and record its BunchMeta.
     const meta: BunchMeta = {
       bunchID,
       parentID: node.bunchID,
       offset,
     };
-    order.receive([meta]);
+    order.addMetas([meta]);
 
     const beforePos: Position = {
       bunchID,
@@ -169,14 +170,14 @@ export class Suggestion {
     }
     // Make a bunchID out of the spaces and a random string.
     const spaces = new Array(existingSpaces + 1).fill(" ").join("");
-    const bunchID = spaces + BunchIDs.newReplicaID();
+    const bunchID = spaces + maybeRandomString();
     // Create a bunch and record its BunchMeta.
     const meta: BunchMeta = {
       bunchID,
       parentID: node.bunchID,
       offset,
     };
-    order.receive([meta]);
+    order.addMetas([meta]);
 
     const afterPos: Position = {
       bunchID,
@@ -214,14 +215,14 @@ export class Suggestion {
             // the block type, ignore it so that the suggesion's addition can win?
             // Or re-do our own block marker set, so it will LWW win in the end.
             if (
-              Order.equalsPosition(msg.pos, this.firstBlockPos) ||
+              positionEquals(msg.pos, this.firstBlockPos) ||
               this.isInRange(msg.pos)
             ) {
               this.wrapper.setMarker(msg.pos, msg.marker);
             }
             break;
           case "delete":
-            if (Order.equalsPosition(msg.pos, this.firstBlockPos)) {
+            if (positionEquals(msg.pos, this.firstBlockPos)) {
               // Before deleting, need to fill in the previous blockPos, so that
               // wrapper.list always starts with a block marker.
               const curIndex = this.origin.blockMarkers.indexOfPosition(
