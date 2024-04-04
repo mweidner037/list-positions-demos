@@ -48,7 +48,10 @@ export class Suggestion {
       throw new Error("Selection is empty");
     }
 
-    const list = new List<string | BlockMarker>(origin.order);
+    // Use a forked Order, for privacy (our metas are not synced until we merge the change)
+    // and to prevent the origin from using one of our not-yet-synced metas as a dependency.
+    const list = new List<string | BlockMarker>(new Order());
+    list.order.load(origin.order.save());
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
       list.set(pos, value);
     }
@@ -200,8 +203,10 @@ export class Suggestion {
       for (const msg of msgs) {
         switch (msg.type) {
           case "set":
-            // meta is already applied via the origin's set method.
-            // Note: this assumes a new position, so it's either all in range or all not.
+            if (msg.meta) {
+              this.wrapper.order.addMetas([msg.meta]);
+            }
+            // Note: this assumes a new position, so that it's either all in range or all not.
             if (this.isInRange(msg.startPos)) {
               this.wrapper.set(msg.startPos, msg.chars);
             }
