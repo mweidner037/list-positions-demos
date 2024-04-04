@@ -1,12 +1,13 @@
 import { TimestampFormatting } from "list-formatting";
 import {
-  BunchIDs,
-  BunchMeta,
-  BunchNode,
   List,
+  MAX_POSITION,
+  MIN_POSITION,
   Order,
   Position,
+  positionEquals,
 } from "list-positions";
+import { maybeRandomString } from "maybe-random-string";
 import { BlockMarker } from "../common/block_text";
 import { Message } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
@@ -47,7 +48,10 @@ export class Suggestion {
       throw new Error("Selection is empty");
     }
 
-    const list = new List<string | BlockMarker>(origin.order);
+    // Use a forked Order, for privacy (our metas are not synced until we merge the change)
+    // and to prevent the origin from using one of our not-yet-synced metas as a dependency.
+    const list = new List<string | BlockMarker>(new Order());
+    list.order.load(origin.order.save());
     for (const [pos, value] of origin.list.entries(selStart, selEnd)) {
       list.set(pos, value);
     }
@@ -97,45 +101,44 @@ export class Suggestion {
 
     // Create a Position before startPos that is hacked to be closer to it
     // than almost any concurrent or future Position.
-    // We use the fact that Order replicaIDs always use chars < "|".
+    // We do so by creating a left child whose bunchID (tiebreaker) starts with "|",
+    // which is < all other default bunchID chars.
 
-    // Find the last left child of startPos, if any.
-    const offset = 2 * startPos.innerIndex;
-    const node = order.getNodeFor(startPos);
-    let lastChild: BunchNode | null = null;
-    for (let i = node.childrenLength - 1; i >= 0; i--) {
-      const child = node.getChild(i);
-      if (child.offset === offset) {
-        lastChild = child;
-        break;
-      }
-    }
-    // If this hack was used before, lastChild might already start with a pipe.
-    // Use one more pipe than it.
+    // If this hack was used before, a sibling might already start with "|".
+    // Use more "|"s than it.
+    // (Technically, we only need to consider siblings with the same offset, but we're lazy.)
     let existingPipes = 0;
-    if (lastChild !== null) {
-      for (let i = 0; i < lastChild.bunchID.length; i++) {
-        if (lastChild.bunchID[i] === "|") existingPipes++;
-        else break;
+    const parent = order.getNodeFor(startPos);
+    for (let i = 0; i < parent.childrenLength; i++) {
+      const sibling = parent.getChild(i);
+      let siblingPipes = 0;
+      for (const char of sibling.bunchID) {
+        if (char === "|") siblingPipes++;
       }
+      existingPipes = Math.max(existingPipes, siblingPipes);
     }
+
     // Make a bunchID out of the pipes and a random string.
     const pipes = new Array(existingPipes + 1).fill("|").join("");
-    const bunchID = pipes + BunchIDs.newReplicaID();
-    // Create a bunch and record its BunchMeta.
-    const meta: BunchMeta = {
-      bunchID,
-      parentID: node.bunchID,
-      offset,
-    };
-    order.receive([meta]);
+    const bunchID = pipes + maybeRandomString();
 
-    const beforePos: Position = {
-      bunchID,
-      innerIndex: 0,
-    };
+    // Use a crafted Order.createPositions call that creates a new bunch as a
+    // left child of startPos, according to the Fugue algorithm.
+    const [beforePos, newMeta] = order.createPositions(
+      MIN_POSITION,
+      startPos,
+      1,
+      { bunchID }
+    );
+    console.log(beforePos, newMeta);
+
     // TODO: use dedicated meta message instead of this empty set.
-    this.messages.push({ type: "set", startPos: beforePos, chars: "", meta });
+    this.messages.push({
+      type: "set",
+      startPos: beforePos,
+      chars: "",
+      meta: newMeta!,
+    });
     return beforePos;
   }
 
@@ -145,45 +148,43 @@ export class Suggestion {
 
     // Create a Position after endPosIncl that is hacked to be closer to it
     // than almost any concurrent or future Position.
-    // We use the fact that Order replicaIDs always use chars > " ".
+    // We do so by creating a right child whose bunchID (tiebreaker) starts with " ",
+    // which is < all other default bunchID chars.
 
-    // Find the first right child of endPosIncl, if any.
-    const offset = 2 * endPosIncl.innerIndex + 1;
-    const node = order.getNodeFor(endPosIncl);
-    let firstChild: BunchNode | null = null;
-    for (let i = 0; i < node.childrenLength; i++) {
-      const child = node.getChild(i);
-      if (child.offset === offset) {
-        firstChild = child;
-        break;
-      }
-    }
-    // If this hack was used before, firstChild might already start with a space.
-    // Use one more space than it.
+    // If this hack was used before, a sibling might already start with " ".
+    // Use more " "s than it.
+    // (Technically, we only need to consider siblings with the same offset, but we're lazy.)
     let existingSpaces = 0;
-    if (firstChild !== null) {
-      for (let i = 0; i < firstChild.bunchID.length; i++) {
-        if (firstChild.bunchID[i] === " ") existingSpaces++;
-        else break;
+    const parent = order.getNodeFor(endPosIncl);
+    for (let i = 0; i < parent.childrenLength; i++) {
+      const sibling = parent.getChild(i);
+      let siblingSpaces = 0;
+      for (const char of sibling.bunchID) {
+        if (char === " ") siblingSpaces++;
       }
+      existingSpaces = Math.max(existingSpaces, siblingSpaces);
     }
-    // Make a bunchID out of the spaces and a random string.
-    const spaces = new Array(existingSpaces + 1).fill(" ").join("");
-    const bunchID = spaces + BunchIDs.newReplicaID();
-    // Create a bunch and record its BunchMeta.
-    const meta: BunchMeta = {
-      bunchID,
-      parentID: node.bunchID,
-      offset,
-    };
-    order.receive([meta]);
 
-    const afterPos: Position = {
-      bunchID,
-      innerIndex: 0,
-    };
+    // Make a bunchID out of the pipes and a random string.
+    const spaces = new Array(existingSpaces + 1).fill(" ").join("");
+    const bunchID = spaces + maybeRandomString();
+
+    // Use a crafted Order.createPositions call that creates a new bunch as a
+    // right child of endPosIncl, according to the Fugue algorithm.
+    const [afterPos, newMeta] = order.createPositions(
+      endPosIncl,
+      MAX_POSITION,
+      1,
+      { bunchID }
+    );
+
     // TODO: use dedicated meta message instead of this empty set.
-    this.messages.push({ type: "set", startPos: afterPos, chars: "", meta });
+    this.messages.push({
+      type: "set",
+      startPos: afterPos,
+      chars: "",
+      meta: newMeta!,
+    });
     return afterPos;
   }
 
@@ -202,8 +203,10 @@ export class Suggestion {
       for (const msg of msgs) {
         switch (msg.type) {
           case "set":
-            // meta is already applied via the origin's set method.
-            // Note: this assumes a new position, so it's either all in range or all not.
+            if (msg.meta) {
+              this.wrapper.order.addMetas([msg.meta]);
+            }
+            // Note: this assumes a new position, so that it's either all in range or all not.
             if (this.isInRange(msg.startPos)) {
               this.wrapper.set(msg.startPos, msg.chars);
             }
@@ -214,14 +217,14 @@ export class Suggestion {
             // the block type, ignore it so that the suggesion's addition can win?
             // Or re-do our own block marker set, so it will LWW win in the end.
             if (
-              Order.equalsPosition(msg.pos, this.firstBlockPos) ||
+              positionEquals(msg.pos, this.firstBlockPos) ||
               this.isInRange(msg.pos)
             ) {
               this.wrapper.setMarker(msg.pos, msg.marker);
             }
             break;
           case "delete":
-            if (Order.equalsPosition(msg.pos, this.firstBlockPos)) {
+            if (positionEquals(msg.pos, this.firstBlockPos)) {
               // Before deleting, need to fill in the previous blockPos, so that
               // wrapper.list always starts with a block marker.
               const curIndex = this.origin.blockMarkers.indexOfPosition(

@@ -84,7 +84,7 @@ export class RichTextServer {
     switch (msg.type) {
       case "set":
         if (msg.meta) {
-          this.list.order.receive([msg.meta]);
+          this.list.order.addMetas([msg.meta]);
         }
         this.list.set(msg.startPos, ...msg.chars);
         this.echo(ws, data);

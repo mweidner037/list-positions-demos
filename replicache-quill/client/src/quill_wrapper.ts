@@ -7,7 +7,13 @@ import {
   TimestampMark,
   sliceFromSpan,
 } from 'list-formatting';
-import {BunchMeta, Order, Position} from 'list-positions';
+import {
+  BunchMeta,
+  MAX_POSITION,
+  MIN_POSITION,
+  Position,
+  expandPositions,
+} from 'list-positions';
 import 'quill/dist/quill.snow.css';
 
 const Delta: typeof DeltaType = Quill.import('delta');
@@ -40,12 +46,19 @@ export class QuillWrapper {
   static newRichList(): RichList<string> {
     const richList = new RichList<string>({expandRules});
 
-    // Create initial "\n", required by Quill.
+    // Create initial "\n", required by Quill, with the same bunchID
+    // & BunchMeta on all replicas.
     // TODO: This state is not actually stored in Replicache.
     // That's okay because we never mutate it (except for marks,
     // stored separately), but it is confusing.
     // Would be nicer to create this char on the server in createSpace().
-    richList.load(makeInitialState());
+    const [pos] = richList.order.createPositions(
+      MIN_POSITION,
+      MAX_POSITION,
+      1,
+      {bunchID: 'INIT'},
+    );
+    richList.list.set(pos, '\n');
 
     return richList;
   }
@@ -201,7 +214,7 @@ export class QuillWrapper {
           allMetas.push(op.meta);
         }
       }
-      this.richList.order.receive(allMetas);
+      this.richList.order.addMetas(allMetas);
 
       // Process the non-"meta" ops.
       let pendingDelta: DeltaStatic = new Delta();
@@ -232,7 +245,7 @@ export class QuillWrapper {
             break;
           case 'delete':
             // OPT: group same-bunch deletions.
-            for (const pos of Order.startPosToArray(op.startPos, op.count)) {
+            for (const pos of expandPositions(op.startPos, op.count)) {
               if (this.richList.list.has(pos)) {
                 const index = this.richList.list.indexOfPosition(pos);
                 this.richList.list.delete(pos);
@@ -394,18 +407,4 @@ function formattingToQuillAttr(
     } else ret[key] = value;
   }
   return ret;
-}
-
-/**
- * Fake initial saved state that's identical on all replicas: a single
- * "\n", to match Quill's initial state.
- */
-function makeInitialState() {
-  // TODO: Accept an optional bunchID in Order.createPositions instead, so can do this
-  // directly in newRichList instead of saving and loading.
-  const richList = new RichList<string>({
-    order: new Order({newBunchID: () => 'INIT'}),
-  });
-  richList.list.insertAt(0, '\n');
-  return richList.save();
 }

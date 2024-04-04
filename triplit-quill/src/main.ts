@@ -1,6 +1,11 @@
 import { ClientFetchResult, TriplitClient } from "@triplit/client";
 import { RichList } from "list-formatting";
-import { Order, Position } from "list-positions";
+import {
+  MAX_POSITION,
+  MIN_POSITION,
+  Position,
+  expandPositions,
+} from "list-positions";
 import { schema } from "../triplit/schema";
 import { QuillWrapper, WrapperOp } from "./quill_wrapper";
 
@@ -134,10 +139,7 @@ async function sendLocalOps() {
               break;
             case "set":
               let i = 0;
-              for (const pos of Order.startPosToArray(
-                op.startPos,
-                op.chars.length
-              )) {
+              for (const pos of expandPositions(op.startPos, op.chars.length)) {
                 await tx.insert("values", {
                   id: idOfPos(pos),
                   bunchID: pos.bunchID,
@@ -178,10 +180,12 @@ async function sendLocalOps() {
  * "\n", to match Quill's initial state.
  */
 function makeInitialState() {
-  const richList = new RichList<string>({
-    order: new Order({ newBunchID: () => "INIT" }),
+  const richList = new RichList<string>();
+  // Use the same bunchID & BunchMeta on all replicas.
+  const [pos] = richList.order.createPositions(MIN_POSITION, MAX_POSITION, 1, {
+    bunchID: "INIT",
   });
-  richList.list.insertAt(0, "\n");
+  richList.list.set(pos, "\n");
   return richList.save();
 }
 

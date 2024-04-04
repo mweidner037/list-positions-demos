@@ -59,7 +59,7 @@ async function init() {
   await r.query(async tx => {
     const bunches = await allBunches(tx);
     // First need to load all metas together, to avoid dependency ordering concerns.
-    richList.order.receive(bunches.map(bunch => bunch.meta));
+    richList.order.addMetas(bunches.map(bunch => bunch.meta));
     // Now load all values.
     for (const bunch of bunches) {
       // TODO: In list-positions, provide method to set a whole bunch's values quickly.
