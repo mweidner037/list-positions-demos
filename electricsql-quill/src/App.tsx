@@ -1,6 +1,10 @@
 import { Loader } from "./Loader";
-import { RecipePicker } from "./recipe-components/RecipePicker";
+import { DocPicker } from "./recipe-components/DocPicker";
 
 export default function App() {
-  return <Loader><RecipePicker /></Loader>
+  return (
+    <Loader>
+      <DocPicker />
+    </Loader>
+  );
 }

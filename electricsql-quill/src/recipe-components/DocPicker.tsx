@@ -1,34 +1,32 @@
 import { useLiveQuery } from "electric-sql/react";
 import { genUUID } from "electric-sql/util";
-import { PositionSource } from "position-strings";
 import { useEffect, useState } from "react";
 
 import { useElectric } from "../Loader";
-import { Recipes as Recipe } from "../generated/client";
-import { DEFAULT_UNIT } from "../units";
-import { RecipeEditor } from "./RecipeEditor";
+import { Docs as Doc } from "../generated/client";
 
 import logo from "../assets/logo.svg";
-import "./RecipePicker.css";
+import "./DocPicker.css";
+import { ElectricQuill } from "../quill/ElectricQuill";
 
-export function RecipePicker() {
+export function DocPicker() {
   const { db } = useElectric()!;
 
   const [pickedId, setPickedId] = useState<string>();
 
-  // If the URL hash is nonempty, try to use it as the recipe ID.
+  // If the URL hash is nonempty, try to use it as the doc ID.
   // We check it during the first render only.
   const [checkedHash, setCheckedHash] = useState(document.location.hash === "");
   useEffect(() => {
     const hash = document.location.hash.substring(1);
     if (hash !== "") {
-      // Check if it is a valid recipe.
-      // TODO: The recipe might be valid but not yet synced from Postgres.
+      // Check if it is a valid doc.
+      // TODO: The doc might be valid but not yet synced from Postgres.
       // Should we wait until the shape sync resolves before redirecting?
-      db.recipes
+      db.docs
         .findUnique({ where: { id: hash } })
-        .then((recipe) => {
-          if (recipe !== null) setPickedId(recipe.id);
+        .then((doc) => {
+          if (doc !== null) setPickedId(doc.id);
           else document.location.hash = "";
           setCheckedHash(true);
         })
@@ -47,12 +45,12 @@ export function RecipePicker() {
   }
 
   if (pickedId) {
-    return <RecipeEditor recipeId={pickedId} />;
+    return <ElectricQuill docId={pickedId} />;
   } else {
     return (
       <NotYetPicked
         onPick={(pickedId) => {
-          // Store pickedId in the URL hash so refreshing still shows the same recipe.
+          // Store pickedId in the URL hash so refreshing still shows the same doc.
           document.location.hash = pickedId;
           setPickedId(pickedId);
         }}
@@ -61,37 +59,24 @@ export function RecipePicker() {
   }
 }
 
-function NotYetPicked({ onPick }: { onPick: (recipeId: string) => void }) {
+function NotYetPicked({ onPick }: { onPick: (docId: string) => void }) {
   const { db } = useElectric()!;
 
   const { results } = useLiveQuery(
-    db.recipes.liveMany({ orderBy: { recipename: "asc" } })
+    db.docs.liveMany({ orderBy: { docname: "asc" } })
   );
 
-  const addRecipe = async () => {
+  const addDoc = async () => {
     const id = genUUID();
-    await db.recipes.create({
+    await db.docs.create({
       data: {
         id,
-        recipename: `Untitled ${id.slice(0, 6)}`,
-        scale: 1,
-      },
-    });
-    // Add a starting ingredient.
-    await db.ingredients.create({
-      data: {
-        id: genUUID(),
-        text: "",
-        amount_unscaled: 0,
-        units: DEFAULT_UNIT,
-        // Arbitrary valid starting position.
-        position: new PositionSource({ ID: "INIT" }).createBetween(),
-        recipe_id: id,
+        docname: `Untitled ${id.slice(0, 6)}`,
       },
     });
   };
 
-  const recipes: Recipe[] = results ?? [];
+  const docs: Doc[] = results ?? [];
 
   return (
     <div className="Picker">
@@ -99,17 +84,13 @@ function NotYetPicked({ onPick }: { onPick: (recipeId: string) => void }) {
         <img src={logo} className="Picker-logo" alt="logo" />
         <div>
           <div className="controls">
-            <button className="button" onClick={addRecipe}>
+            <button className="button" onClick={addDoc}>
               Add
             </button>
           </div>
-          {recipes.map((recipe) => (
-            <p
-              key={recipe.id}
-              className="recipe"
-              onClick={() => onPick(recipe.id)}
-            >
-              <code>{recipe.recipename}</code>
+          {docs.map((doc) => (
+            <p key={doc.id} className="docP" onClick={() => onPick(doc.id)}>
+              <code>{doc.docname}</code>
             </p>
           ))}
         </div>

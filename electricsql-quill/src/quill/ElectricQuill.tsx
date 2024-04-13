@@ -21,6 +21,8 @@ type InstanceState = {
   curMarkIDs: Set<string>;
 };
 
+// TODO: makeInitialState. Easier than filling the tables manually.
+
 export function ElectricQuill({
   docId,
   style,

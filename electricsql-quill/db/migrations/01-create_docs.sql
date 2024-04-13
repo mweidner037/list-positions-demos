@@ -1,34 +1,18 @@
-CREATE TABLE recipes (
+CREATE TABLE docs (
   id UUID PRIMARY KEY,
-  recipeName TEXT NOT NULL,
-  scale REAL NOT NULL
+  docName TEXT NOT NULL
 );
 
-ALTER TABLE recipes ENABLE ELECTRIC;
+ALTER TABLE docs ENABLE ELECTRIC;
 
-CREATE TABLE ingredients (
-  id UUID PRIMARY KEY,
-  -- Note: Plain LWW value, not a text CRDT (unlike other demos).
-  text TEXT NOT NULL,
-  amount_unscaled REAL NOT NULL,
-  units TEXT NOT NULL,
-  position TEXT NOT NULL,
-  -- Edit wins over delete semantics: Appears to happen automatically.
-
-  recipe_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE
-);
-
-ALTER TABLE ingredients ENABLE ELECTRIC;
-
--- Rich-text tables for the instructions.
+-- Rich-text tables for the docs.
 
 CREATE TABLE bunches (
   id TEXT PRIMARY KEY,
   -- Another bunchId or "ROOT".
   parent_id TEXT NOT NULL,
   the_offset INTEGER NOT NULL,
-  -- To use in another app, replace recipes(id) with your doc IDs.
-  doc_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE
+  doc_id UUID NOT NULL REFERENCES docs(id) ON DELETE CASCADE
 );
 
 ALTER TABLE bunches ENABLE ELECTRIC;
@@ -43,8 +27,7 @@ CREATE TABLE char_entries (
   -- Electric does not support CHAR(1), so use TEXT instead.
   char TEXT NOT NULL,
   -- Store doc IDs so we can delete cascade.
-  -- To use in another app, replace recipes(id) with your doc IDs.
-  doc_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE
+  doc_id UUID NOT NULL REFERENCES docs(id) ON DELETE CASCADE
 );
 
 ALTER TABLE char_entries ENABLE ELECTRIC;
@@ -62,8 +45,7 @@ CREATE TABLE formatting_marks (
   -- JSON encoded.
   the_value TEXT NOT NULL,
   -- Store doc IDs so we can delete cascade.
-  -- To use in another app, replace recipes(id) with your doc IDs.
-  doc_id UUID NOT NULL REFERENCES recipes(id) ON DELETE CASCADE
+  doc_id UUID NOT NULL REFERENCES docs(id) ON DELETE CASCADE
 );
 
 ALTER TABLE formatting_marks ENABLE ELECTRIC;
