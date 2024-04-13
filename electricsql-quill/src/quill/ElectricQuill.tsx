@@ -21,8 +21,6 @@ type InstanceState = {
   curMarkIDs: Set<string>;
 };
 
-// TODO: makeInitialState. Easier than filling the tables manually.
-
 export function ElectricQuill({
   docId,
   style,
@@ -125,6 +123,7 @@ export function ElectricQuill({
     }
 
     return () => wrapper.destroy();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
 
   // Reflect DB ops in Quill.

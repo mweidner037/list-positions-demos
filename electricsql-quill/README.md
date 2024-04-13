@@ -1,17 +1,18 @@
-# ElectricSQL - Recipe Editor Demo
+# ElectricSQL-Quill
 
-(Based on the [ElectricSQL Quick Start](https://electric-sql.com/docs/quickstart), specifically, `npx create-electric-app@latest my-app --template react`)
+Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [ElectricSQL](https://electric-sql.com/) database sync service, and [Quill](https://quilljs.com/).
+
+- `bunches` for list-positions's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata).
+- `values` for the values (characters). For simplicity, each character gets its own row. (It's probably possible to instead store one row per bunch instead, using an `S.Set` to track which chars are present/deleted.)
+- `marks` for the formatting marks.
 
 This is a web application using ElectricSQL in the browser with [wa-sqlite](https://electric-sql.com/docs/integrations/drivers/web/wa-sqlite).
 
 Behaviors demonstrated (see the schema in [`db/migrations/01-create_recipes.ts`](./db/migrations/01-create_recipes.sql)):
 
-1. Ingredients can be moved (arrows on the left). If an ingredient is moved and edited concurrently, both updates go through in the obvious way. To implement this, we assign a [position string](https://github.com/mweidner037/position-strings#readme) to each ingredient and `ORDER BY` those.
-2. The recipe can be scaled (buttons at the bottom). If the recipe is scaled while other edits happen concurrently, the edited amounts are also scaled, keeping the recipe in proportion. To implement this, we store an `amount_unscaled` for each ingredient and a `scale` for the whole recipe, displaying their product (cf. [global modifiers in CRDTs](https://mattweidner.com/2023/09/26/crdt-survey-2.html#global-modifiers)).
-3. If an ingredient is deleted and edited concurrently, the edit "wins" over the delete, canceling it. This is ElectricSQL's default behavior.
-4. Rich-text editing for the instructions: ElectricSQL doesn't have built-in support for this, so I implement it on top using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme). See [`ElectricQuill`](./src/quill/ElectricQuill.tsx), a reusable ElectricSQL-Quill binding.
-
 ## Pre-reqs
+
+The instructions below are unchanged from the [ElectricSQL Quick Start](https://electric-sql.com/docs/quickstart) (specifically, `npx create-electric-app@latest my-app --template react`).
 
 You need [NodeJS >= 16.11 and Docker Compose v2](https://electric-sql.com/docs/usage/installation/prereqs).
 

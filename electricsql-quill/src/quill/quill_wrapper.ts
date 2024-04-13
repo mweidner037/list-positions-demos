@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   FormattedValues,
   RichList,
@@ -8,7 +6,14 @@ import {
   TimestampMark,
   sliceFromSpan,
 } from "list-formatting";
-import { BunchMeta, Order, Position, expandPositions } from "list-positions";
+import {
+  BunchMeta,
+  MAX_POSITION,
+  MIN_POSITION,
+  Order,
+  Position,
+  expandPositions,
+} from "list-positions";
 import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 
 import "quill/dist/quill.snow.css";
@@ -331,10 +336,14 @@ export class QuillWrapper {
    * "\n", to match Quill's initial state.
    */
   static makeInitialState() {
-    const richList = new RichList<string>({
-      order: new Order({ newBunchID: () => "INIT" }),
-    });
-    richList.list.insertAt(0, "\n");
+    const richList = new RichList<string>();
+    const [pos] = richList.order.createPositions(
+      MIN_POSITION,
+      MAX_POSITION,
+      1,
+      { bunchID: "INIT" }
+    );
+    richList.list.set(pos, "\n");
     return richList.save();
   }
 }

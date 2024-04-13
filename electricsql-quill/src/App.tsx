@@ -1,5 +1,5 @@
 import { Loader } from "./Loader";
-import { DocPicker } from "./recipe-components/DocPicker";
+import { DocPicker } from "./DocPicker";
 
 export default function App() {
   return (
