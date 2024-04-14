@@ -2,13 +2,16 @@
 
 Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [ElectricSQL](https://electric-sql.com/) database sync service, and [Quill](https://quilljs.com/).
 
-- `bunches` for list-positions's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata).
-- `values` for the values (characters). For simplicity, each character gets its own row. (It's probably possible to instead store one row per bunch instead, using an `S.Set` to track which chars are present/deleted.)
-- `marks` for the formatting marks.
-
 This is a web application using ElectricSQL in the browser with [wa-sqlite](https://electric-sql.com/docs/integrations/drivers/web/wa-sqlite).
+The editor state is stored in a SQL database with three tables:
 
-Behaviors demonstrated (see the schema in [`db/migrations/01-create_recipes.ts`](./db/migrations/01-create_recipes.sql)):
+- `bunches` for list-positions's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata).
+- `char_entries` for the characters. Each character gets its own row.
+- `formatting_marks` for the formatting marks.
+
+See the schema in [`db/migrations/01-create_docs.ts`](./db/migrations/01-create_docs.sql).
+
+Local updates are synced to the local database. When any table changes, a [live query](https://electric-sql.com/docs/usage/data-access/queries#live-queries) in `src/quill/ElectricQuill.tsx` updates the Quill state. Since subscriptions are not incremental (they always return the whole state), we diff against the previous state to figure out what changed.
 
 ## Pre-reqs
 
