@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useElectric } from "./Loader";
 import { Docs as Doc } from "./generated/client";
 
-import logo from "../assets/logo.svg";
+import logo from "./assets/logo.svg";
 import "./DocPicker.css";
 import { ElectricQuill } from "./quill/ElectricQuill";
 
