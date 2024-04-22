@@ -53,6 +53,11 @@ export class ProseMirrorWrapper {
 
   private dispatchTransaction(tr: Transaction): void {
     this.view.updateState(this.view.state.apply(tr));
+    for (let i = 0; i < tr.steps.length; i++) {
+      const step = tr.steps[i];
+      console.log(step.constructor.name, step);
+      tr.mapping.maps[i].forEach((...args) => console.log(" ", ...args));
+    }
     this.onLocalMutation({
       clientID: this.clientID,
       clientCounter: this.clientCounter++,
@@ -68,7 +73,15 @@ export class ProseMirrorWrapper {
         Step.fromJSON(schema, j)
       );
       for (const step of steps) {
-        tr.step(step);
+        console.log(step.constructor.name, step);
+        if (!tr.maybeStep(step).failed) {
+          // TODO: update local Outline.
+          tr.mapping.maps
+            .at(-1)!
+            .forEach((...args) => console.log(" ", ...args));
+        } else {
+          console.log("  Failed");
+        }
       }
     }
 
