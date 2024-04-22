@@ -1,35 +1,21 @@
-import { TimestampMark } from "list-formatting";
-import { List, Order } from "list-positions";
 import { WebSocket, WebSocketServer } from "ws";
-import { BlockMarker } from "../common/block_text";
-import { Message } from "../common/messages";
+import { Message, Mutation } from "../common/messages";
 
 const heartbeatInterval = 30000;
 
+/**
+ * Server that assigns mutations a sequence number and echoes them to all
+ * clients in order.
+ *
+ * TODO: instead store literal state + CRDT state only, to demo that we
+ * don't need the whole history?
+ */
 export class RichTextServer {
-  // To easily save and send the state to new clients, store as Lists.
-  private readonly order: Order;
-  private readonly text: List<string>;
-  private readonly blockMarkers: List<BlockMarker>;
-  // We don't need to inspect the formatting, so just store the marks directly.
-  // TODO: store in compareMarks order so we don't have to worry about it?
-  private readonly marks: TimestampMark[];
+  private readonly mutations: Mutation[] = [];
 
   private clients = new Set<WebSocket>();
 
   constructor(readonly wss: WebSocketServer) {
-    this.order = new Order();
-    this.text = new List(this.order);
-    this.blockMarkers = new List(this.order);
-    this.marks = [];
-
-    // Initial state: a single paragraph, to match Prosemirror's starting state.
-    this.blockMarkers.insertAt(0, {
-      type: "paragraph",
-      timestamp: 1,
-      creatorID: "INIT",
-    });
-
     this.wss.on("connection", (ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         this.wsOpen(ws);
@@ -64,12 +50,7 @@ export class RichTextServer {
     // Send the current state.
     this.sendMessage(ws, {
       type: "welcome",
-      savedState: {
-        order: this.order.save(),
-        text: this.text.save(),
-        blockMarkers: this.blockMarkers.save(),
-        formatting: this.marks,
-      },
+      mutations: this.mutations,
     });
 
     this.clients.add(ws);
@@ -92,42 +73,12 @@ export class RichTextServer {
   private wsReceive(ws: WebSocket, data: string) {
     const msg = JSON.parse(data) as Message;
     switch (msg.type) {
-      case "set":
-        if (msg.meta) this.order.addMetas([msg.meta]);
-        this.text.set(msg.startPos, ...msg.chars);
+      case "mutation":
+        this.mutations.push(msg.mutation);
         this.echo(ws, data);
-        // Because a Position is only ever set once (when it's created) and
-        // the server does no validation, the origin's optimistically-updated
-        // state is already correct: msg.startPos is set to msg.chars.
-        // If that were not true, we would need to send a message to origin
-        // telling it how to repair its optimistically-updated state.
-        break;
-      case "setMarker":
-        if (msg.meta) this.order.addMetas([msg.meta]);
-        this.blockMarkers.set(msg.pos, msg.marker);
-        this.echo(ws, data);
-        // Because a Position is only ever set once (when it's created) and
-        // the server does no validation, the origin's optimistically-updated
-        // state is already correct: msg.pos is set to msg.marker.
-        // If that were not true, we would need to send a message to origin
-        // telling it how to repair its optimistically-updated state.
-        break;
-      case "delete":
-        // Pos might belong to either list; try to delete from both.
-        this.text.delete(msg.pos);
-        this.blockMarkers.delete(msg.pos);
-        this.echo(ws, data);
-        // Because deletes are permanant and the server does no validation,
-        // the origin's optimistically-updated state is already correct.
-        break;
-      case "mark":
-        this.marks.push(msg.mark);
-        this.echo(ws, data);
-        // Because marks are permanant and the server does no validation,
-        // the origin's optimistically-updated state is already correct.
         break;
       default:
-        throw new Error("Unknown message type: " + msg.type);
+        console.error("Unknown message type: " + msg.type);
     }
   }
 
