@@ -1,5 +1,24 @@
+import type { BunchMeta, Position } from "list-positions";
+
+export type AnnotatedStep =
+  | {
+      type: "replaceInsert";
+      meta: BunchMeta | null;
+      startPos: Position;
+      // The creator allocates slice.size positions.
+      // Need to check that an applier doesn't use more somehow.
+      sliceJSON: unknown;
+    }
+  | {
+      type: "replaceDelete";
+      fromPos: Position;
+      toInclPos: Position;
+      openStart: number;
+      openEnd: number;
+    };
+
 export type Mutation = {
-  data: unknown;
+  annSteps: AnnotatedStep[];
   clientID: string;
   clientCounter: number;
 };
