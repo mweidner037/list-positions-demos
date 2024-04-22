@@ -43,6 +43,7 @@ function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
   switch (msg.type) {
     case "mutation":
       wrapper.receive([msg.mutation]);
+      break;
     default:
       console.error("Unexpected message type:", msg.type, msg);
   }
