@@ -7,7 +7,7 @@ const ws = new WebSocket(wsURL);
 function welcomeListener(e: MessageEvent<string>) {
   const msg = JSON.parse(e.data) as Message;
   if (msg.type === "welcome") {
-    // Got the initial state. Start Quill.
+    // Got the initial state. Start ProseMirror.
     ws.removeEventListener("message", welcomeListener);
     const wrapper = new ProseMirrorWrapper(msg.savedState, onLocalChange);
     ws.addEventListener("message", (e: MessageEvent<string>) => {

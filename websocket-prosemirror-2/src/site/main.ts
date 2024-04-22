@@ -1,4 +1,4 @@
-import { Message } from "../common/messages";
+import { Message, Mutation } from "../common/messages";
 import { ProseMirrorWrapper } from "./prosemirror_wrapper";
 
 const wsURL = location.origin.replace(/^http/, "ws");
@@ -9,15 +9,11 @@ function welcomeListener(e: MessageEvent<string>) {
   if (msg.type === "welcome") {
     // Got the initial state. Start Quill.
     ws.removeEventListener("message", welcomeListener);
-    const wrapper = new ProseMirrorWrapper(msg.savedState, onLocalChange);
+    const wrapper = new ProseMirrorWrapper(onLocalMutation);
+    wrapper.receive(msg.mutations);
     ws.addEventListener("message", (e: MessageEvent<string>) => {
       onMessage(e, wrapper);
     });
-
-    for (const type of ["h1", "h2", "ul", "ol"]) {
-      document.getElementById("button_" + type)!.onclick = () =>
-        setBlockType(wrapper, type);
-    }
   } else {
     console.error("Received non-welcome message first: " + msg.type);
   }
@@ -29,8 +25,8 @@ ws.addEventListener("message", welcomeListener);
 // That would require buffering updates and/or logic to
 // "merge" in the Welcome state received after reconnecting.
 
-function onLocalChange(msgs: Message[]) {
-  send(msgs);
+function onLocalMutation(mutation: Mutation) {
+  send([{ type: "mutation", mutation }]);
 }
 
 function send(msgs: Message[]): void {
@@ -45,60 +41,9 @@ function send(msgs: Message[]): void {
 function onMessage(e: MessageEvent<string>, wrapper: ProseMirrorWrapper): void {
   const msg = JSON.parse(e.data) as Message;
   switch (msg.type) {
-    case "set":
-      if (msg.meta) wrapper.order.addMetas([msg.meta]);
-      wrapper.set(msg.startPos, msg.chars);
-      break;
-    case "setMarker":
-      if (msg.meta) wrapper.order.addMetas([msg.meta]);
-      wrapper.setMarker(msg.pos, msg.marker);
-      break;
-    case "delete":
-      wrapper.delete(msg.pos);
-      break;
-    case "mark":
-      wrapper.addMark(msg.mark);
-      break;
+    case "mutation":
+      wrapper.receive([msg.mutation]);
     default:
       console.error("Unexpected message type:", msg.type, msg);
   }
-}
-
-/**
- * Sets the currently selected block(s) to the given type.
- */
-function setBlockType(wrapper: ProseMirrorWrapper, type: string): void {
-  // Cursors point to the Position on their left.
-  // Affect all block markers between those immediately left (inclusive)
-  // of anchor and head.
-  const sel = wrapper.getSelection();
-  let [start, end] = [sel.anchor, sel.head];
-  if (wrapper.order.compare(start, end) > 0) [start, end] = [end, start];
-
-  const startBlock = wrapper.blockMarkers.indexOfPosition(start, "left");
-  const endBlock = wrapper.blockMarkers.indexOfPosition(end, "left");
-  const entries = [...wrapper.blockMarkers.entries(startBlock, endBlock + 1)];
-
-  // If they all have the given type, toggle it off. Else toggle it on.
-  let allHaveType = true;
-  for (const [, existing] of entries) {
-    if (existing.type !== type) {
-      allHaveType = false;
-      break;
-    }
-  }
-  const typeToSet = allHaveType ? "paragraph" : type;
-
-  wrapper.update(() => {
-    for (const [blockPos, existing] of wrapper.blockMarkers.entries(
-      startBlock,
-      endBlock + 1
-    )) {
-      if (existing.type !== typeToSet) {
-        const marker = { ...existing, type: typeToSet };
-        wrapper.setMarker(blockPos, marker);
-        send([{ type: "setMarker", pos: blockPos, marker }]);
-      }
-    }
-  });
 }
