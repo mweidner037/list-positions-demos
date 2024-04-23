@@ -23,6 +23,35 @@ export type AnnotatedStep =
       openStart: number;
       openEnd: number;
       structure: boolean;
+    }
+  | {
+      type: "replaceAround";
+      insertLeft?: {
+        // TODO: metas array instead (easier to process)
+        meta: BunchMeta | null;
+        startPos: Position;
+      };
+      insertRight?: {
+        meta: BunchMeta | null;
+        startPos: Position;
+      };
+      deleteLeft?: {
+        // Right cursor - doesn't expand.
+        startPos: Position;
+        // Left cursor - doesn't expand.
+        endPos: Position;
+      };
+      deleteRight?: {
+        // Right cursor - doesn't expand.
+        startPos: Position;
+        // Left cursor - doesn't expand.
+        endPos: Position;
+      }
+      sliceJSON: unknown;
+      // This is just an index into the slice, so we don't need to CRDT-ify it.
+      sliceInsert: number;
+      sliceAfterInsert: number;
+      structure: boolean;
     };
 
 export type Mutation = {

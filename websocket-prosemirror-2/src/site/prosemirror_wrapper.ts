@@ -13,7 +13,7 @@ import { keymap } from "prosemirror-keymap";
 import { baseKeymap } from "prosemirror-commands";
 import { menuBar } from "prosemirror-menu";
 import { maybeRandomString } from "maybe-random-string";
-import { ReplaceStep } from "prosemirror-transform";
+import { ReplaceAroundStep, ReplaceStep } from "prosemirror-transform";
 
 import "prosemirror-menu/style/menu.css";
 import "prosemirror-view/style/prosemirror.css";
@@ -97,11 +97,125 @@ export class ProseMirrorWrapper {
             sliceJSON: step.slice.toJSON(),
           });
         }
+      } else if (step instanceof ReplaceAroundStep) {
+        const sliceAfterInsert = step.slice.size - step.insert;
+        const annStep: AnnotatedStep = {
+          type: "replaceAround",
+          sliceJSON: step.slice.toJSON(),
+          sliceInsert: step.insert,
+          sliceAfterInsert,
+          // @ts-expect-error structure marked internal
+          structure: step.structure,
+        };
+
+        if (step.insert > 0) {
+          // There is content to insert on the left side of the gap.
+          let insertionIndex: number;
+          if (step.gapFrom === step.from) {
+            // No deletion, just insert before the gap.
+            insertionIndex = step.from;
+          } else if (step.gapFrom - step.from >= 2) {
+            // Insert in the middle of the deleted positions, so that the resolved
+            // [from, gapFrom) range always contains the insertion position.
+            insertionIndex = step.from + 1;
+          } else {
+            // Insert before the deleted position. That way, if we have
+            // to stretch the resolved [from, gapFrom) range to include the insertion position
+            // (so that the resolved ReplaceAroundStep is well-formed),
+            // then the range expands away from the gap, which is probably more important (e.g. a paragraph's contents).
+            insertionIndex = step.from;
+          }
+
+          // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
+          const [startPos, meta] = this.outline.insertAt(
+            insertionIndex,
+            step.insert
+          );
+          this.outline.delete(startPos, step.insert);
+
+          annStep.insertLeft = { meta, startPos };
+        }
+
+        if (sliceAfterInsert > 0) {
+          // There is content to insert on the right side of the gap.
+          let insertionIndex: number;
+          if (step.to === step.gapTo) {
+            // No deletion, just insert after the gap.
+            insertionIndex = step.to;
+          } else if (step.to - step.gapTo >= 2) {
+            // Insert in the middle of the deleted positions, so that the resolved
+            // [gapTo, to) range always contains the insertion position.
+            insertionIndex = step.to - 1;
+          } else {
+            // Insert after the deleted position. That way, if we have
+            // to stretch the resolved [gapTo, to) range to include the insertion position
+            // (so that the resolved ReplaceAroundStep is well-formed),
+            // then the range expands away from the gap, which is probably more important (e.g. a paragraph's contents).
+            insertionIndex = step.to;
+          }
+
+          // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
+          const [startPos, meta] = this.outline.insertAt(
+            insertionIndex,
+            sliceAfterInsert
+          );
+          this.outline.delete(startPos, sliceAfterInsert);
+
+          annStep.insertRight = { meta, startPos };
+        }
+
+        if (step.gapFrom > step.from) {
+          // There is deleted content before the gap.
+          annStep.deleteLeft = {
+            startPos: this.outline.cursorAt(step.from, "right"),
+            endPos: this.outline.cursorAt(step.gapFrom, "left"),
+          };
+        }
+
+        if (step.to > step.gapTo) {
+          // There is deleted content after the gap.
+          annStep.deleteRight = {
+            startPos: this.outline.cursorAt(step.gapTo, "right"),
+            endPos: this.outline.cursorAt(step.to, "left"),
+          };
+        }
+
+        // Update this.outline to reflect the local changes.
+        // Start with index-based ops from right to left.
+        this.outline.deleteAt(step.gapTo, step.to - step.gapTo);
+        this.outline.deleteAt(step.from, step.gapFrom - step.from);
+        if (annStep.insertRight) {
+          this.outline.add(
+            annStep.insertRight.startPos,
+            step.slice.size - step.insert
+          );
+        }
+        if (annStep.insertLeft) {
+          this.outline.add(annStep.insertLeft.startPos, step.insert);
+        }
+
+        // Sanity check.
+        if (
+          !(
+            (annStep.insertLeft || annStep.deleteLeft) &&
+            (annStep.insertRight || annStep.deleteRight)
+          )
+        ) {
+          // Without an insert or delete command, we won't know what to use as from/to.
+          // We could add a separate field to handle that case, but I'm not sure it ever happens.
+          console.error(
+            "Unsupported step type, skipping: ReplaceAroundStep with no insert or delete on one side",
+            step.toJSON()
+          );
+          continue;
+        }
+
+        annSteps.push(annStep);
       } else {
         console.warn(
           "Unsupported step type, skipping:",
           step.constructor.name,
-          step
+          step.toJSON()
         );
       }
     }
@@ -140,12 +254,7 @@ export class ProseMirrorWrapper {
               // If not, log and undo?
               this.outline.add(annStep.startPos, slice.size);
             } else {
-              console.log(
-                "replaceDelete failed:",
-                stepResult.failed,
-                step,
-                annStep
-              );
+              console.log("insert failed:", stepResult.failed, step, annStep);
             }
             break;
           }
@@ -164,13 +273,112 @@ export class ProseMirrorWrapper {
                 // Update Outline to match.
                 this.outline.deleteAt(from, to - from);
               } else {
-                console.log(
-                  "replaceDelete failed:",
-                  stepResult.failed,
-                  step,
-                  annStep
+                console.log("delete failed:", stepResult.failed, step, annStep);
+              }
+            }
+            break;
+          }
+          case "replaceAround": {
+            if (annStep.insertLeft?.meta) {
+              this.outline.order.addMetas([annStep.insertLeft?.meta]);
+            }
+            if (annStep.insertRight?.meta) {
+              this.outline.order.addMetas([annStep.insertRight?.meta]);
+            }
+
+            let from: number;
+            let gapFrom: number;
+            if (annStep.deleteLeft) {
+              // The original deleted range was nonempty, so even if already deleted,
+              // it is never the case that startIndex > endIndex.
+              from = this.outline.indexOfCursor(
+                annStep.deleteLeft.startPos,
+                "right"
+              );
+              gapFrom = this.outline.indexOfCursor(
+                annStep.deleteLeft.endPos,
+                "left"
+              );
+              if (annStep.insertLeft) {
+                // Ensure from <= insertionIndex, stretching the deleted the range if needed.
+                // Otherwise, our changes to this.outline won't match ProseMirror's changes.
+                const insertionIndex = this.outline.indexOfPosition(
+                  annStep.insertLeft.startPos,
+                  "right"
+                );
+                from = Math.min(from, insertionIndex);
+              }
+            } else {
+              // Use insertion index, i.e., the index where startPos will be once present.
+              from = this.outline.indexOfPosition(
+                annStep.insertLeft!.startPos,
+                "right"
+              );
+              gapFrom = from;
+            }
+
+            let gapTo: number;
+            let to: number;
+            if (annStep.deleteRight) {
+              gapTo = this.outline.indexOfCursor(
+                annStep.deleteRight.startPos,
+                "right"
+              );
+              to = this.outline.indexOfCursor(
+                annStep.deleteRight.endPos,
+                "left"
+              );
+              if (annStep.insertRight) {
+                // Ensure insertionIndex <= to, stretching the deleted the range if needed.
+                // Otherwise, our changes to this.outline won't match ProseMirror's changes.
+                const insertionIndex = this.outline.indexOfPosition(
+                  annStep.insertRight!.startPos,
+                  "right"
+                );
+                to = Math.max(to, insertionIndex);
+              }
+            } else {
+              // Use insertion index, i.e., the index where startPos will be once present.
+              gapTo = this.outline.indexOfPosition(
+                annStep.insertRight!.startPos,
+                "right"
+              );
+              to = gapTo;
+            }
+
+            const step = new ReplaceAroundStep(
+              from,
+              to,
+              gapFrom,
+              gapTo,
+              Slice.fromJSON(schema, annStep.sliceJSON),
+              annStep.sliceInsert,
+              annStep.structure
+            );
+            const stepResult = tr.maybeStep(step);
+            if (!stepResult.failed) {
+              // Update Outline to match.
+              this.outline.deleteAt(gapTo, to - gapTo);
+              this.outline.deleteAt(from, gapFrom - from);
+              if (annStep.insertLeft) {
+                this.outline.add(
+                  annStep.insertLeft.startPos,
+                  annStep.sliceInsert
                 );
               }
+              if (annStep.insertRight) {
+                this.outline.add(
+                  annStep.insertRight.startPos,
+                  annStep.sliceAfterInsert
+                );
+              }
+            } else {
+              console.log(
+                "replaceAround failed:",
+                stepResult.failed,
+                step,
+                annStep
+              );
             }
             break;
           }
