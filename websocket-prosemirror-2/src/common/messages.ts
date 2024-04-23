@@ -1,10 +1,13 @@
 import type { BunchMeta, Position } from "list-positions";
 
-// TODO: investigate "structure" args to ReplaceStep and ReplaceAroundStep.
-
 export type AnnotatedStep =
   | {
-      type: "replaceInsert";
+      // We split ReplaceStep into insert + delete.
+      // This is easier because then we don't have to deal with edge cases
+      // where our created positions are no longer adjacent to the deleted range
+      // (due to concurrent insertions, which don't become part of
+      // the deleted range because we don't let it expand).
+      type: "insert";
       meta: BunchMeta | null;
       startPos: Position;
       // The creator allocates slice.size positions.
@@ -12,13 +15,15 @@ export type AnnotatedStep =
       sliceJSON: unknown;
     }
   | {
-      type: "replaceDelete";
+      type: "delete";
+      // Right cursor - doesn't expand.
       fromPos: Position;
-      toInclPos: Position;
+      // Left cursor - doesn't expand.
+      toPos: Position;
       openStart: number;
       openEnd: number;
-    }
-  | { type: "replaceAround" };
+      structure: boolean;
+    };
 
 export type Mutation = {
   annSteps: AnnotatedStep[];

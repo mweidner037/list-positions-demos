@@ -73,17 +73,15 @@ export class ProseMirrorWrapper {
     for (let i = 0; i < tr.steps.length; i++) {
       const step = tr.steps[i];
       if (step instanceof ReplaceStep) {
-        // Using replace semantics for normal insertions seems odd.
-        // Instead, break it into a separate delete and insert.
         if (step.from !== step.to) {
           annSteps.push({
-            type: "replaceDelete",
-            fromPos: this.outline.positionAt(step.from),
-            // step.to is exclusive, toPos is inclusive.
-            // TODO: omit if same as fromPos (opt).
-            toInclPos: this.outline.positionAt(step.to - 1),
+            type: "delete",
+            fromPos: this.outline.cursorAt(step.from, "right"),
+            toPos: this.outline.cursorAt(step.to, "left"),
             openStart: step.slice.openStart,
             openEnd: step.slice.openEnd,
+            // @ts-expect-error structure marked internal
+            structure: step.structure,
           });
           this.outline.deleteAt(step.from, step.to - step.from);
         }
@@ -93,7 +91,7 @@ export class ProseMirrorWrapper {
             step.slice.size
           );
           annSteps.push({
-            type: "replaceInsert",
+            type: "insert",
             meta,
             startPos,
             sliceJSON: step.slice.toJSON(),
@@ -121,7 +119,7 @@ export class ProseMirrorWrapper {
     for (const mutation of mutations) {
       for (const annStep of mutation.annSteps) {
         switch (annStep.type) {
-          case "replaceInsert": {
+          case "insert": {
             if (annStep.meta) {
               this.outline.order.addMetas([annStep.meta]);
             }
@@ -143,7 +141,7 @@ export class ProseMirrorWrapper {
               this.outline.add(annStep.startPos, slice.size);
             } else {
               console.log(
-                "replaceDelete failed",
+                "replaceDelete failed:",
                 stepResult.failed,
                 step,
                 annStep
@@ -151,26 +149,23 @@ export class ProseMirrorWrapper {
             }
             break;
           }
-          case "replaceDelete": {
-            // Bias inwards (less deleted).
-            const from = this.outline.indexOfPosition(annStep.fromPos, "right");
-            const toIncl = this.outline.indexOfPosition(
-              annStep.toInclPos,
-              "left"
-            );
-            if (from <= toIncl) {
+          case "delete": {
+            const from = this.outline.indexOfCursor(annStep.fromPos, "right");
+            const to = this.outline.indexOfCursor(annStep.toPos, "left");
+            if (from < to) {
               const step = new ReplaceStep(
                 from,
-                toIncl + 1,
-                new Slice(Fragment.empty, annStep.openStart, annStep.openEnd)
+                to,
+                new Slice(Fragment.empty, annStep.openStart, annStep.openEnd),
+                annStep.structure
               );
               const stepResult = tr.maybeStep(step);
               if (!stepResult.failed) {
                 // Update Outline to match.
-                this.outline.deleteAt(from, toIncl - from + 1);
+                this.outline.deleteAt(from, to - from);
               } else {
                 console.log(
-                  "replaceDelete failed",
+                  "replaceDelete failed:",
                   stepResult.failed,
                   step,
                   annStep
