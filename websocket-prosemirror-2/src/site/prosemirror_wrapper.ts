@@ -139,6 +139,7 @@ export class ProseMirrorWrapper {
               // Update Outline to match.
               // TODO: Should we instead cheat by just comparing the before & after doc sizes?
               // Needs to be <= the slice's size.
+              // If not, log and undo?
               this.outline.add(annStep.startPos, slice.size);
             } else {
               console.log(

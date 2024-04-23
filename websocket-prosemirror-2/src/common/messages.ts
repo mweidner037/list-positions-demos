@@ -1,5 +1,7 @@
 import type { BunchMeta, Position } from "list-positions";
 
+// TODO: investigate "structure" args to ReplaceStep and ReplaceAroundStep.
+
 export type AnnotatedStep =
   | {
       type: "replaceInsert";
@@ -15,7 +17,8 @@ export type AnnotatedStep =
       toInclPos: Position;
       openStart: number;
       openEnd: number;
-    };
+    }
+  | { type: "replaceAround" };
 
 export type Mutation = {
   annSteps: AnnotatedStep[];
