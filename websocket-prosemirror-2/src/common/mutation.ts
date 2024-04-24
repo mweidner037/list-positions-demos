@@ -60,6 +60,17 @@ export type AnnotatedStep =
       isAdd: boolean;
       pos: Position;
       markJSON: unknown;
+    }
+  | {
+      type: "attr";
+      pos: Position;
+      attr: string;
+      value: unknown;
+    }
+  | {
+      type: "docAttr";
+      attr: string;
+      value: unknown;
     };
 
 export type Mutation = {

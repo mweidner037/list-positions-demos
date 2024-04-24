@@ -16,6 +16,8 @@ import { maybeRandomString } from "maybe-random-string";
 import {
   AddMarkStep,
   AddNodeMarkStep,
+  AttrStep,
+  DocAttrStep,
   RemoveMarkStep,
   RemoveNodeMarkStep,
   ReplaceAroundStep,
@@ -302,6 +304,17 @@ export class ProseMirrorWrapper {
           pos: this.outline.positionAt(step.pos),
           markJSON: step.mark.toJSON(),
         });
+      } else if (step instanceof AttrStep) {
+        // TODO: test (need to find a setup that uses this step).
+        annSteps.push({
+          type: "attr",
+          pos: this.outline.positionAt(step.pos),
+          attr: step.attr,
+          value: step.value,
+        });
+      } else if (step instanceof DocAttrStep) {
+        // TODO: test (need to find a setup that uses this step).
+        annSteps.push({ type: "docAttr", attr: step.attr, value: step.value });
       } else {
         console.warn(
           "Unsupported step type, skipping:",
@@ -602,6 +615,26 @@ export class ProseMirrorWrapper {
           const step: AddNodeMarkStep | RemoveNodeMarkStep = new (
             annStep.isAdd ? AddNodeMarkStep : RemoveNodeMarkStep
           )(pos, mark);
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
+            // Record undo command.
+            undoSteps.push(step.invert(tr.docs.at(-1)!));
+          }
+          break;
+        }
+        case "attr": {
+          const pos = this.outline.indexOfPosition(annStep.pos);
+          if (pos === -1) continue;
+          const step = new AttrStep(pos, annStep.attr, annStep.value);
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
+            // Record undo command.
+            undoSteps.push(step.invert(tr.docs.at(-1)!));
+          }
+          break;
+        }
+        case "docAttr": {
+          const step = new DocAttrStep(annStep.attr, annStep.value);
           const success = maybeStep(tr, step, annStep);
           if (success) {
             // Record undo command.
