@@ -15,7 +15,9 @@ import { menuBar } from "prosemirror-menu";
 import { maybeRandomString } from "maybe-random-string";
 import {
   AddMarkStep,
+  AddNodeMarkStep,
   RemoveMarkStep,
+  RemoveNodeMarkStep,
   ReplaceAroundStep,
   ReplaceStep,
   Step,
@@ -26,7 +28,7 @@ import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-example-setup/style/style.css";
 import { MAX_POSITION, MIN_POSITION, Outline } from "list-positions";
 
-// TODO: remove menu buttons: undo/redo; select block
+// TODO: remove menu buttons: undo/redo
 
 const DEBUG = false;
 
@@ -287,6 +289,17 @@ export class ProseMirrorWrapper {
           isAdd: step instanceof AddMarkStep,
           fromPos: this.outline.cursorAt(step.from, "right"),
           toPos: this.outline.cursorAt(step.to, "left"),
+          markJSON: step.mark.toJSON(),
+        });
+      } else if (
+        step instanceof AddNodeMarkStep ||
+        step instanceof RemoveNodeMarkStep
+      ) {
+        // TODO: test (need to find a setup that uses this step).
+        annSteps.push({
+          type: "changeNodeMark",
+          isAdd: step instanceof AddNodeMarkStep,
+          pos: this.outline.positionAt(step.pos),
           markJSON: step.mark.toJSON(),
         });
       } else {
@@ -579,6 +592,20 @@ export class ProseMirrorWrapper {
           if (success) {
             // Record undo command.
             undoSteps.push(step.invert());
+          }
+          break;
+        }
+        case "changeNodeMark": {
+          const pos = this.outline.indexOfPosition(annStep.pos);
+          if (pos === -1) continue;
+          const mark = Mark.fromJSON(schema, annStep.markJSON);
+          const step: AddNodeMarkStep | RemoveNodeMarkStep = new (
+            annStep.isAdd ? AddNodeMarkStep : RemoveNodeMarkStep
+          )(pos, mark);
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
+            // Record undo command.
+            undoSteps.push(step.invert(tr.docs.at(-1)!));
           }
           break;
         }

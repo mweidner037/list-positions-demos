@@ -53,6 +53,13 @@ export type AnnotatedStep =
       // TODO: test behavior of marks across concurrent split - will it complain that the mark crosses a non-inline node?
       toPos: Position;
       markJSON: unknown;
+    }
+  | {
+      type: "changeNodeMark";
+      // Else remove.
+      isAdd: boolean;
+      pos: Position;
+      markJSON: unknown;
     };
 
 export type Mutation = {
