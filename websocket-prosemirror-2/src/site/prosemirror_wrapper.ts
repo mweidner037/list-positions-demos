@@ -22,8 +22,7 @@ import { MAX_POSITION, MIN_POSITION, Outline } from "list-positions";
 
 // TODO: remove menu buttons: undo/redo; select block
 
-// TODO: in numbered list, "join with above block" menu button works locally,
-// not remotely, but yet on refresh.
+const DEBUG = false;
 
 // Mix the nodes from prosemirror-schema-list into the basic schema to
 // create a schema with list support.
@@ -265,7 +264,7 @@ export class ProseMirrorWrapper {
         ) {
           // Without an insert or delete command, we won't know what to use as from/to.
           // We could add a separate field to handle that case, but I'm not sure it ever happens.
-          console.error(
+          console.warn(
             "Unsupported step type, skipping: ReplaceAroundStep with no insert or delete on one side",
             step.toJSON()
           );
@@ -295,6 +294,7 @@ export class ProseMirrorWrapper {
       clientCounter: this.clientCounter++,
       annSteps,
     };
+    if (DEBUG) console.log("Local", mutation, tr.steps);
     this.pendingMutations.push({
       mutation,
       undo: (undoTr) => {
@@ -313,8 +313,6 @@ export class ProseMirrorWrapper {
   receive(mutations: Mutation[]): void {
     const tr = this.view.state.tr;
 
-    console.log("# receive", mutations);
-
     // Optimization: If the first mutations are confirming our first pending local mutations,
     // just mark those as not-pending.
     const matches = (() => {
@@ -328,13 +326,10 @@ export class ProseMirrorWrapper {
       }
       return i;
     })();
-    console.log("First", matches, "match our pending");
     mutations = mutations.slice(matches);
     this.pendingMutations = this.pendingMutations.slice(matches);
 
     // Process remaining mutations normally.
-    console.log("Remaining mutations", mutations);
-    console.log("Vs our pending", this.pendingMutations);
 
     if (mutations.length === 0) return;
 
@@ -377,6 +372,8 @@ export class ProseMirrorWrapper {
     mutation: Mutation,
     tr: Transaction
   ): (undoTr: Transaction) => void {
+    if (DEBUG) console.log("Apply", mutation);
+
     const undoSteps: Step[] = [];
     const undoOutlineChanges: (() => void)[] = [];
 
@@ -594,7 +591,7 @@ function maybeStep(
     }
     return true;
   } catch (err) {
-    console.warn(`${annStep.type} errored:`, err, step, annStep);
+    console.log(`${annStep.type} errored:`, `${err}`, step, annStep);
     return false;
   }
 }
