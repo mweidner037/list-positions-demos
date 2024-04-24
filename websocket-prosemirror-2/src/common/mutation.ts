@@ -41,6 +41,18 @@ export type AnnotatedStep =
       sliceInsert: number;
       sliceAfterInsert: number;
       structure: boolean;
+    }
+  | {
+      type: "changeMark";
+      // Else remove.
+      isAdd: boolean;
+      // Right cursor - doesn't expand.
+      fromPos: Position;
+      // Left cursor - doesn't expand.
+      // TODO: do expand for e.g. bold?
+      // TODO: test behavior of marks across concurrent split - will it complain that the mark crosses a non-inline node?
+      toPos: Position;
+      markJSON: unknown;
     };
 
 export type Mutation = {

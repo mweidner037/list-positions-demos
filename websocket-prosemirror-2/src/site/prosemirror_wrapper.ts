@@ -1,7 +1,7 @@
 import { AnnotatedStep, Mutation, idEquals } from "../common/mutation";
 import { EditorState, Plugin, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { Schema, Slice } from "prosemirror-model";
+import { Mark, Schema, Slice } from "prosemirror-model";
 import { schema as schemaBasic } from "prosemirror-schema-basic";
 import { addListNodes } from "prosemirror-schema-list";
 import {
@@ -13,7 +13,13 @@ import { keymap } from "prosemirror-keymap";
 import { baseKeymap } from "prosemirror-commands";
 import { menuBar } from "prosemirror-menu";
 import { maybeRandomString } from "maybe-random-string";
-import { ReplaceAroundStep, ReplaceStep, Step } from "prosemirror-transform";
+import {
+  AddMarkStep,
+  RemoveMarkStep,
+  ReplaceAroundStep,
+  ReplaceStep,
+  Step,
+} from "prosemirror-transform";
 
 import "prosemirror-menu/style/menu.css";
 import "prosemirror-view/style/prosemirror.css";
@@ -272,6 +278,17 @@ export class ProseMirrorWrapper {
         }
 
         annSteps.push(annStep);
+      } else if (
+        step instanceof AddMarkStep ||
+        step instanceof RemoveMarkStep
+      ) {
+        annSteps.push({
+          type: "changeMark",
+          isAdd: step instanceof AddMarkStep,
+          fromPos: this.outline.cursorAt(step.from, "right"),
+          toPos: this.outline.cursorAt(step.to, "left"),
+          markJSON: step.mark.toJSON(),
+        });
       } else {
         console.warn(
           "Unsupported step type, skipping:",
@@ -548,6 +565,20 @@ export class ProseMirrorWrapper {
                 );
               }
             });
+          }
+          break;
+        }
+        case "changeMark": {
+          const from = this.outline.indexOfCursor(annStep.fromPos, "right");
+          const to = this.outline.indexOfCursor(annStep.toPos, "left");
+          const mark = Mark.fromJSON(schema, annStep.markJSON);
+          const step: AddMarkStep | RemoveMarkStep = new (
+            annStep.isAdd ? AddMarkStep : RemoveMarkStep
+          )(from, to, mark);
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
+            // Record undo command.
+            undoSteps.push(step.invert());
           }
           break;
         }
