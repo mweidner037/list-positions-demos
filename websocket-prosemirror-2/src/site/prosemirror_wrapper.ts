@@ -591,6 +591,17 @@ function maybeStep(
     }
     return true;
   } catch (err) {
+    // Allegedly this is not supposed to happen if you rebase correctly, but
+    // I can't seem to prevent it.
+    // See https://github.com/ProseMirror/prosemirror/issues/873
+    // E.g.:
+    // - Start with 3 paras.
+    // - Alice converts first two into an ordered list.
+    // - While offline, Bob converts last two into an ordered list.
+    // - Bob's change rebased: ReplaceAroundStep applying the <ol></ol> fails
+    // as expected. But then this ReplaceStep applying the <li></li>'s fails with
+    // an error (invalid content for list-node: <>), which I think is because
+    // the 3rd <li> is no longer inside an <ol>, hence gets upset.
     console.log(`${annStep.type} errored:`, `${err}`, step, annStep);
     return false;
   }
