@@ -1,4 +1,4 @@
-import { AnnotatedStep, Mutation } from "../common/messages";
+import { AnnotatedStep, Mutation, idEquals } from "../common/mutation";
 import { EditorState, Plugin, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { Schema, Slice } from "prosemirror-model";
@@ -313,37 +313,56 @@ export class ProseMirrorWrapper {
   receive(mutations: Mutation[]): void {
     const tr = this.view.state.tr;
 
-    // If the first mutations are confirming our first pending local mutations,
-    // just mark them as not-pending.
-    let i = 0;
-    for (; i < mutations.length; i++) {
-      if (this.pendingMutations.length === 0) break;
+    console.log("# receive", mutations);
 
-      const firstPending = this.pendingMutations[0].mutation;
+    // Optimization: If the first mutations are confirming our first pending local mutations,
+    // just mark those as not-pending.
+    const matches = (() => {
+      let i = 0;
+      for (
+        ;
+        i < Math.min(mutations.length, this.pendingMutations.length);
+        i++
+      ) {
+        if (!idEquals(mutations[i], this.pendingMutations[i].mutation)) break;
+      }
+      return i;
+    })();
+    console.log("First", matches, "match our pending");
+    mutations = mutations.slice(matches);
+    this.pendingMutations = this.pendingMutations.slice(matches);
+
+    // Process remaining mutations normally.
+    console.log("Remaining mutations", mutations);
+    console.log("Vs our pending", this.pendingMutations);
+
+    if (mutations.length === 0) return;
+
+    // For remaining mutations, we need to undo pending - do mutations - redo pending.
+    for (let p = this.pendingMutations.length - 1; p >= 0; p--) {
+      this.pendingMutations[p].undo(tr);
+    }
+
+    for (let i = 0; i < mutations.length; i++) {
+      this.applyMutation(mutations[i], tr);
+      // If it's one of ours (possibly interleaved with remote messages),
+      // remove it from this.pendingMessages.
+      // As a consequence, it won't be redone.
       if (
-        mutations[i].clientID === firstPending.clientID &&
-        mutations[i].clientCounter === firstPending.clientCounter
+        this.pendingMutations.length !== 0 &&
+        idEquals(mutations[i], this.pendingMutations[0].mutation)
       ) {
         this.pendingMutations.shift();
       }
+      // TODO: Handle the case where the server deliberately skipped one of our messages.
+      // Needs to ack this fact.
     }
 
-    if (i === mutations.length) return;
-
-    // For remaining mutations, we need to undo pending - do mutations - redo pending.
-    for (let j = this.pendingMutations.length - 1; j >= 0; j--) {
-      this.pendingMutations[j].undo(tr);
-    }
-
-    for (; i < mutations.length; i++) {
-      this.applyMutation(mutations[i], tr);
-    }
-
-    for (let j = 0; j < this.pendingMutations.length; j++) {
+    for (let p = 0; p < this.pendingMutations.length; p++) {
       // Apply the CRDT-ified version of the pending mutation, since it's being
       // rebased on top of a different state from where it was originally applied.
-      this.pendingMutations[j].undo = this.applyMutation(
-        this.pendingMutations[j].mutation,
+      this.pendingMutations[p].undo = this.applyMutation(
+        this.pendingMutations[p].mutation,
         tr
       );
     }

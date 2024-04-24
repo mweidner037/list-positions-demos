@@ -1,5 +1,6 @@
 import { WebSocket, WebSocketServer } from "ws";
-import { Message, Mutation } from "../common/messages";
+import { Message } from "../common/messages";
+import { Mutation } from "../common/mutation";
 
 const heartbeatInterval = 30000;
 
@@ -37,7 +38,6 @@ export class RichTextServer {
 
   private echo(origin: WebSocket, data: string) {
     for (const ws of this.clients) {
-      if (ws === origin) continue;
       if (ws.readyState == WebSocket.OPEN) {
         ws.send(data);
       }
