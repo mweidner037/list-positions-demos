@@ -20,6 +20,11 @@ import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-example-setup/style/style.css";
 import { MAX_POSITION, MIN_POSITION, Outline } from "list-positions";
 
+// TODO: remove menu buttons: undo/redo; select block
+
+// TODO: in numbered list, "join with above block" menu button works locally,
+// not remotely, but yet on refresh.
+
 // Mix the nodes from prosemirror-schema-list into the basic schema to
 // create a schema with list support.
 const schema = new Schema({
@@ -201,8 +206,8 @@ export class ProseMirrorWrapper {
 
         // Update this.outline to reflect the local changes.
         const toDelete = [
+          ...this.outline.positions(step.from, step.gapFrom),
           ...this.outline.positions(step.gapTo, step.to),
-          ...this.outline.positions(step.gapFrom, step.from),
         ];
         for (const pos of toDelete) this.outline.delete(pos);
         undoOutlineChanges.push(() => {
@@ -328,6 +333,7 @@ export class ProseMirrorWrapper {
 
     let firstFailure = true;
     for (const annStep of mutation.annSteps) {
+      console.log(annStep);
       switch (annStep.type) {
         case "insert": {
           if (annStep.meta) {
@@ -339,8 +345,18 @@ export class ProseMirrorWrapper {
           const from = this.outline.indexOfPosition(annStep.startPos, "right");
           const slice = Slice.fromJSON(schema, annStep.sliceJSON);
           const step = new ReplaceStep(from, from, slice);
-          const stepResult = tr.maybeStep(step);
-          if (!stepResult.failed) {
+          // TODO: Replace that really needs to a replace (not delete-insert) -
+          // e.g., triggered by deleting around a list boundary, with different openEnd/openStart -
+          // can cause this step to throw an exception (Invalid content for node list item: ...),
+          // not just fail.
+          let failMessage: string | null = null;
+          try {
+            const stepResult = tr.maybeStep(step);
+            failMessage = stepResult.failed;
+          } catch (err) {
+            failMessage = `Error: ${err}`;
+          }
+          if (!failMessage) {
             // Update outline to match.
             const count = slice.size;
             this.outline.add(annStep.startPos, count);
@@ -351,7 +367,7 @@ export class ProseMirrorWrapper {
               this.outline.delete(annStep.startPos, count)
             );
           } else {
-            console.log("insert failed:", stepResult.failed, step, annStep);
+            console.log("insert failed:", failMessage, step, annStep);
           }
           break;
         }
@@ -365,8 +381,18 @@ export class ProseMirrorWrapper {
               new Slice(Fragment.empty, annStep.openStart, annStep.openEnd),
               annStep.structure
             );
-            const stepResult = tr.maybeStep(step);
-            if (!stepResult.failed) {
+            // TODO: Replace that really needs to a replace (not delete-insert) -
+            // e.g., triggered by deleting around a list boundary, with different openEnd/openStart -
+            // can cause this step to throw an exception (Invalid content for list item: <>),
+            // not just fail.
+            let failMessage: string | null = null;
+            try {
+              const stepResult = tr.maybeStep(step);
+              failMessage = stepResult.failed;
+            } catch (err) {
+              failMessage = `Error: ${err}`;
+            }
+            if (!failMessage) {
               // Update outline to match.
               const toDelete = [...this.outline.positions(from, to)];
               for (const pos of toDelete) this.outline.delete(pos);
@@ -377,7 +403,7 @@ export class ProseMirrorWrapper {
                 for (const pos of toDelete) this.outline.add(pos);
               });
             } else {
-              console.log("delete failed:", stepResult.failed, step, annStep);
+              console.log("delete failed:", failMessage, step, annStep);
             }
           }
           break;
