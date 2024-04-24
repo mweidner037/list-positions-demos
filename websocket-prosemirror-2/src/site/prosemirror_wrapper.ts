@@ -416,8 +416,8 @@ export class ProseMirrorWrapper {
 
           const slice = Slice.fromJSON(schema, annStep.sliceJSON);
           const step = new ReplaceStep(from, to, slice, annStep.structure);
-          const stepResult = tr.maybeStep(step);
-          if (!stepResult.failed) {
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
             // Update Outline to match.
             const toDelete = [...this.outline.positions(from, to)];
             for (const pos of toDelete) this.outline.delete(pos);
@@ -434,8 +434,6 @@ export class ProseMirrorWrapper {
                 this.outline.delete(annStep.insert.startPos, sliceSize);
               }
             });
-          } else {
-            console.log("replace failed:", stepResult.failed, step, annStep);
           }
           break;
         }
@@ -515,8 +513,8 @@ export class ProseMirrorWrapper {
             annStep.sliceInsert,
             annStep.structure
           );
-          const stepResult = tr.maybeStep(step);
-          if (!stepResult.failed) {
+          const success = maybeStep(tr, step, annStep);
+          if (success) {
             // Update Outline to match.
             const toDelete = [
               ...this.outline.positions(from, gapFrom),
@@ -553,19 +551,12 @@ export class ProseMirrorWrapper {
                 );
               }
             });
-          } else {
-            console.log(
-              "replaceAround failed:",
-              stepResult.failed,
-              step,
-              annStep
-            );
           }
           break;
         }
         default:
           const neverAnnStep: never = annStep;
-          console.log("Unknown AnnotatedStep type:", neverAnnStep);
+          console.error("Unknown AnnotatedStep type:", neverAnnStep);
       }
 
       // Sanity checking.
@@ -584,5 +575,26 @@ export class ProseMirrorWrapper {
         undoOutlineChanges[i]();
       }
     };
+  }
+}
+
+/**
+ * @returns Success
+ */
+function maybeStep(
+  tr: Transaction,
+  step: Step,
+  annStep: AnnotatedStep
+): boolean {
+  try {
+    const stepResult = tr.maybeStep(step);
+    if (stepResult.failed) {
+      console.log(`${annStep.type} failed:`, stepResult.failed, step, annStep);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`${annStep.type} errored:`, err, step, annStep);
+    return false;
   }
 }
