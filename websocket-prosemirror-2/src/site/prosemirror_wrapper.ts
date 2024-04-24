@@ -13,7 +13,7 @@ import { keymap } from "prosemirror-keymap";
 import { baseKeymap } from "prosemirror-commands";
 import { menuBar } from "prosemirror-menu";
 import { maybeRandomString } from "maybe-random-string";
-import { ReplaceAroundStep, ReplaceStep } from "prosemirror-transform";
+import { ReplaceAroundStep, ReplaceStep, Step } from "prosemirror-transform";
 
 import "prosemirror-menu/style/menu.css";
 import "prosemirror-view/style/prosemirror.css";
@@ -32,6 +32,16 @@ export class ProseMirrorWrapper {
   readonly clientID: string;
   private clientCounter = 0;
   private outline: Outline;
+
+  private pendingMutations: {
+    readonly mutation: Mutation;
+    /**
+     * Function to undo the local application of this mutation (PM + CRDT state).
+     *
+     * For changes to PM, apply them to undoTr instead of directly to the view.
+     */
+    undo: (undoTr: Transaction) => void;
+  }[] = [];
 
   constructor(readonly onLocalMutation: (mutation: Mutation) => void) {
     this.clientID = maybeRandomString();
@@ -66,12 +76,15 @@ export class ProseMirrorWrapper {
   }
 
   private dispatchTransaction(tr: Transaction): void {
-    // TODO: skip locally applying any steps we don't understand.
-    // TODO: use a last-in-order plugin so we can see what effects plugins have?
     this.view.updateState(this.view.state.apply(tr));
+
     const annSteps: AnnotatedStep[] = [];
+    const undoSteps: Step[] = [];
+    const undoOutlineChanges: (() => void)[] = [];
     for (let i = 0; i < tr.steps.length; i++) {
       const step = tr.steps[i];
+      undoSteps.push(step.invert(tr.docs[i]));
+
       if (step instanceof ReplaceStep) {
         if (step.from !== step.to) {
           annSteps.push({
@@ -83,7 +96,11 @@ export class ProseMirrorWrapper {
             // @ts-expect-error structure marked internal
             structure: step.structure,
           });
-          this.outline.deleteAt(step.from, step.to - step.from);
+          const toDelete = [...this.outline.positions(step.from, step.to)];
+          for (const pos of toDelete) this.outline.delete(pos);
+          undoOutlineChanges.push(() => {
+            for (const pos of toDelete) this.outline.add(pos);
+          });
         }
         if (step.slice.size !== 0) {
           const [startPos, meta] = this.outline.insertAt(
@@ -96,6 +113,8 @@ export class ProseMirrorWrapper {
             startPos,
             sliceJSON: step.slice.toJSON(),
           });
+          const count = step.slice.size;
+          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
         }
       } else if (step instanceof ReplaceAroundStep) {
         const sliceAfterInsert = step.slice.size - step.insert;
@@ -181,20 +200,28 @@ export class ProseMirrorWrapper {
         }
 
         // Update this.outline to reflect the local changes.
-        // Start with index-based ops from right to left.
-        this.outline.deleteAt(step.gapTo, step.to - step.gapTo);
-        this.outline.deleteAt(step.from, step.gapFrom - step.from);
+        const toDelete = [
+          ...this.outline.positions(step.gapTo, step.to),
+          ...this.outline.positions(step.gapFrom, step.from),
+        ];
+        for (const pos of toDelete) this.outline.delete(pos);
+        undoOutlineChanges.push(() => {
+          for (const pos of toDelete) this.outline.add(pos);
+        });
+
         if (annStep.insertRight) {
-          this.outline.add(
-            annStep.insertRight.startPos,
-            step.slice.size - step.insert
-          );
+          const startPos = annStep.insertRight.startPos;
+          const count = step.slice.size - step.insert;
+          this.outline.add(startPos, count);
+          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
         }
         if (annStep.insertLeft) {
-          this.outline.add(annStep.insertLeft.startPos, step.insert);
+          const startPos = annStep.insertLeft.startPos;
+          const count = step.insert;
+          this.outline.add(startPos, count);
+          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
         }
 
-        // Sanity check.
         if (
           !(
             (annStep.insertLeft || annStep.deleteLeft) &&
@@ -218,184 +245,285 @@ export class ProseMirrorWrapper {
           step.toJSON()
         );
       }
+
+      // Sanity checking.
+      const doc = i === tr.steps.length - 1 ? tr.doc : tr.docs[i + 1];
+      if (this.outline.length !== doc.nodeSize) {
+        console.error("(Receive) Lengths no longer match after", step);
+        console.error("  Resulting doc:", doc);
+        return;
+      }
     }
 
-    this.onLocalMutation({
+    const mutation: Mutation = {
       clientID: this.clientID,
       clientCounter: this.clientCounter++,
       annSteps,
+    };
+    this.pendingMutations.push({
+      mutation,
+      undo: (undoTr) => {
+        for (let i = undoSteps.length - 1; i >= 0; i--) {
+          undoTr.step(undoSteps[i]);
+        }
+        for (let i = undoOutlineChanges.length - 1; i >= 0; i--) {
+          undoOutlineChanges[i]();
+        }
+      },
     });
+
+    this.onLocalMutation(mutation);
   }
 
   receive(mutations: Mutation[]): void {
     const tr = this.view.state.tr;
 
-    for (const mutation of mutations) {
-      for (const annStep of mutation.annSteps) {
-        switch (annStep.type) {
-          case "insert": {
-            if (annStep.meta) {
-              this.outline.order.addMetas([annStep.meta]);
-            }
+    // If the first mutations are confirming our first pending local mutations,
+    // just mark them as not-pending.
+    let i = 0;
+    for (; i < mutations.length; i++) {
+      if (this.pendingMutations.length === 0) break;
 
-            // "right" gives the index where the Position would be if present, i.e.,
-            // the insertion index.
-            const from = this.outline.indexOfPosition(
-              annStep.startPos,
-              "right"
+      const firstPending = this.pendingMutations[0].mutation;
+      if (
+        mutations[i].clientID === firstPending.clientID &&
+        mutations[i].clientCounter === firstPending.clientCounter
+      ) {
+        this.pendingMutations.shift();
+      }
+    }
+
+    if (i === mutations.length) return;
+
+    // For remaining mutations, we need to undo pending - do mutations - redo pending.
+    for (let j = this.pendingMutations.length - 1; j >= 0; j--) {
+      this.pendingMutations[j].undo(tr);
+    }
+
+    for (; i < mutations.length; i++) {
+      this.applyMutation(mutations[i], tr);
+    }
+
+    for (let j = 0; j < this.pendingMutations.length; j++) {
+      // Apply the CRDT-ified version of the pending mutation, since it's being
+      // rebased on top of a different state from where it was originally applied.
+      this.pendingMutations[j].undo = this.applyMutation(
+        this.pendingMutations[j].mutation,
+        tr
+      );
+    }
+
+    this.view.updateState(this.view.state.apply(tr));
+  }
+
+  /**
+   * @returns Undo function
+   */
+  private applyMutation(
+    mutation: Mutation,
+    tr: Transaction
+  ): (undoTr: Transaction) => void {
+    const undoSteps: Step[] = [];
+    const undoOutlineChanges: (() => void)[] = [];
+
+    let firstFailure = true;
+    for (const annStep of mutation.annSteps) {
+      switch (annStep.type) {
+        case "insert": {
+          if (annStep.meta) {
+            this.outline.order.addMetas([annStep.meta]);
+          }
+
+          // "right" gives the index where the Position would be if present, i.e.,
+          // the insertion index.
+          const from = this.outline.indexOfPosition(annStep.startPos, "right");
+          const slice = Slice.fromJSON(schema, annStep.sliceJSON);
+          const step = new ReplaceStep(from, from, slice);
+          const stepResult = tr.maybeStep(step);
+          if (!stepResult.failed) {
+            // Update outline to match.
+            const count = slice.size;
+            this.outline.add(annStep.startPos, count);
+
+            // Record undo command.
+            undoSteps.push(step.invert(tr.docs.at(-1)!));
+            undoOutlineChanges.push(() =>
+              this.outline.delete(annStep.startPos, count)
             );
-            const slice = Slice.fromJSON(schema, annStep.sliceJSON);
-            const step = new ReplaceStep(from, from, slice);
-            const stepResult = tr.maybeStep(step);
-            if (!stepResult.failed) {
-              // Update Outline to match.
-              // TODO: Should we instead cheat by just comparing the before & after doc sizes?
-              // Needs to be <= the slice's size.
-              // If not, log and undo?
-              this.outline.add(annStep.startPos, slice.size);
-            } else {
-              console.log("insert failed:", stepResult.failed, step, annStep);
-            }
-            break;
+          } else {
+            console.log("insert failed:", stepResult.failed, step, annStep);
           }
-          case "delete": {
-            const from = this.outline.indexOfCursor(annStep.fromPos, "right");
-            const to = this.outline.indexOfCursor(annStep.toPos, "left");
-            if (from < to) {
-              const step = new ReplaceStep(
-                from,
-                to,
-                new Slice(Fragment.empty, annStep.openStart, annStep.openEnd),
-                annStep.structure
-              );
-              const stepResult = tr.maybeStep(step);
-              if (!stepResult.failed) {
-                // Update Outline to match.
-                this.outline.deleteAt(from, to - from);
-              } else {
-                console.log("delete failed:", stepResult.failed, step, annStep);
-              }
-            }
-            break;
-          }
-          case "replaceAround": {
-            if (annStep.insertLeft?.meta) {
-              this.outline.order.addMetas([annStep.insertLeft?.meta]);
-            }
-            if (annStep.insertRight?.meta) {
-              this.outline.order.addMetas([annStep.insertRight?.meta]);
-            }
-
-            let from: number;
-            let gapFrom: number;
-            if (annStep.deleteLeft) {
-              // The original deleted range was nonempty, so even if already deleted,
-              // it is never the case that startIndex > endIndex.
-              from = this.outline.indexOfCursor(
-                annStep.deleteLeft.startPos,
-                "right"
-              );
-              gapFrom = this.outline.indexOfCursor(
-                annStep.deleteLeft.endPos,
-                "left"
-              );
-              if (annStep.insertLeft) {
-                // Ensure from <= insertionIndex, stretching the deleted the range if needed.
-                // Otherwise, our changes to this.outline won't match ProseMirror's changes.
-                const insertionIndex = this.outline.indexOfPosition(
-                  annStep.insertLeft.startPos,
-                  "right"
-                );
-                from = Math.min(from, insertionIndex);
-              }
-            } else {
-              // Use insertion index, i.e., the index where startPos will be once present.
-              from = this.outline.indexOfPosition(
-                annStep.insertLeft!.startPos,
-                "right"
-              );
-              gapFrom = from;
-            }
-
-            let gapTo: number;
-            let to: number;
-            if (annStep.deleteRight) {
-              gapTo = this.outline.indexOfCursor(
-                annStep.deleteRight.startPos,
-                "right"
-              );
-              to = this.outline.indexOfCursor(
-                annStep.deleteRight.endPos,
-                "left"
-              );
-              if (annStep.insertRight) {
-                // Ensure insertionIndex <= to, stretching the deleted the range if needed.
-                // Otherwise, our changes to this.outline won't match ProseMirror's changes.
-                const insertionIndex = this.outline.indexOfPosition(
-                  annStep.insertRight!.startPos,
-                  "right"
-                );
-                to = Math.max(to, insertionIndex);
-              }
-            } else {
-              // Use insertion index, i.e., the index where startPos will be once present.
-              gapTo = this.outline.indexOfPosition(
-                annStep.insertRight!.startPos,
-                "right"
-              );
-              to = gapTo;
-            }
-
-            const step = new ReplaceAroundStep(
+          break;
+        }
+        case "delete": {
+          const from = this.outline.indexOfCursor(annStep.fromPos, "right");
+          const to = this.outline.indexOfCursor(annStep.toPos, "left");
+          if (from < to) {
+            const step = new ReplaceStep(
               from,
               to,
-              gapFrom,
-              gapTo,
-              Slice.fromJSON(schema, annStep.sliceJSON),
-              annStep.sliceInsert,
+              new Slice(Fragment.empty, annStep.openStart, annStep.openEnd),
               annStep.structure
             );
             const stepResult = tr.maybeStep(step);
             if (!stepResult.failed) {
-              // Update Outline to match.
-              this.outline.deleteAt(gapTo, to - gapTo);
-              this.outline.deleteAt(from, gapFrom - from);
+              // Update outline to match.
+              const toDelete = [...this.outline.positions(from, to)];
+              for (const pos of toDelete) this.outline.delete(pos);
+
+              // Record undo command.
+              undoSteps.push(step.invert(tr.docs.at(-1)!));
+              undoOutlineChanges.push(() => {
+                for (const pos of toDelete) this.outline.add(pos);
+              });
+            } else {
+              console.log("delete failed:", stepResult.failed, step, annStep);
+            }
+          }
+          break;
+        }
+        case "replaceAround": {
+          if (annStep.insertLeft?.meta) {
+            this.outline.order.addMetas([annStep.insertLeft?.meta]);
+          }
+          if (annStep.insertRight?.meta) {
+            this.outline.order.addMetas([annStep.insertRight?.meta]);
+          }
+
+          let from: number;
+          let gapFrom: number;
+          if (annStep.deleteLeft) {
+            // The original deleted range was nonempty, so even if already deleted,
+            // it is never the case that startIndex > endIndex.
+            from = this.outline.indexOfCursor(
+              annStep.deleteLeft.startPos,
+              "right"
+            );
+            gapFrom = this.outline.indexOfCursor(
+              annStep.deleteLeft.endPos,
+              "left"
+            );
+            if (annStep.insertLeft) {
+              // Ensure from <= insertionIndex, stretching the deleted the range if needed.
+              // Otherwise, our changes to this.outline won't match ProseMirror's changes.
+              const insertionIndex = this.outline.indexOfPosition(
+                annStep.insertLeft.startPos,
+                "right"
+              );
+              from = Math.min(from, insertionIndex);
+            }
+          } else {
+            // Use insertion index, i.e., the index where startPos will be once present.
+            from = this.outline.indexOfPosition(
+              annStep.insertLeft!.startPos,
+              "right"
+            );
+            gapFrom = from;
+          }
+
+          let gapTo: number;
+          let to: number;
+          if (annStep.deleteRight) {
+            gapTo = this.outline.indexOfCursor(
+              annStep.deleteRight.startPos,
+              "right"
+            );
+            to = this.outline.indexOfCursor(annStep.deleteRight.endPos, "left");
+            if (annStep.insertRight) {
+              // Ensure insertionIndex <= to, stretching the deleted the range if needed.
+              // Otherwise, our changes to this.outline won't match ProseMirror's changes.
+              const insertionIndex = this.outline.indexOfPosition(
+                annStep.insertRight!.startPos,
+                "right"
+              );
+              to = Math.max(to, insertionIndex);
+            }
+          } else {
+            // Use insertion index, i.e., the index where startPos will be once present.
+            gapTo = this.outline.indexOfPosition(
+              annStep.insertRight!.startPos,
+              "right"
+            );
+            to = gapTo;
+          }
+
+          const step = new ReplaceAroundStep(
+            from,
+            to,
+            gapFrom,
+            gapTo,
+            Slice.fromJSON(schema, annStep.sliceJSON),
+            annStep.sliceInsert,
+            annStep.structure
+          );
+          const stepResult = tr.maybeStep(step);
+          if (!stepResult.failed) {
+            // Update Outline to match.
+            const toDelete = [
+              ...this.outline.positions(from, gapFrom),
+              ...this.outline.positions(gapTo, to),
+            ];
+            for (const pos of toDelete) this.outline.delete(pos);
+            if (annStep.insertLeft) {
+              this.outline.add(
+                annStep.insertLeft.startPos,
+                annStep.sliceInsert
+              );
+            }
+            if (annStep.insertRight) {
+              this.outline.add(
+                annStep.insertRight.startPos,
+                annStep.sliceAfterInsert
+              );
+            }
+
+            // Record undo command.
+            undoSteps.push(step.invert(tr.docs.at(-1)!));
+            undoOutlineChanges.push(() => {
+              for (const pos of toDelete) this.outline.add(pos);
               if (annStep.insertLeft) {
-                this.outline.add(
+                this.outline.delete(
                   annStep.insertLeft.startPos,
                   annStep.sliceInsert
                 );
               }
               if (annStep.insertRight) {
-                this.outline.add(
+                this.outline.delete(
                   annStep.insertRight.startPos,
                   annStep.sliceAfterInsert
                 );
               }
-            } else {
-              console.log(
-                "replaceAround failed:",
-                stepResult.failed,
-                step,
-                annStep
-              );
-            }
-            break;
+            });
+          } else {
+            console.log(
+              "replaceAround failed:",
+              stepResult.failed,
+              step,
+              annStep
+            );
           }
-          default:
-            const neverAnnStep: never = annStep;
-            console.log("Unknown AnnotatedStep type:", neverAnnStep);
+          break;
         }
+        default:
+          const neverAnnStep: never = annStep;
+          console.log("Unknown AnnotatedStep type:", neverAnnStep);
+      }
 
-        // Sanity checking.
-        if (this.outline.length !== tr.doc.nodeSize) {
-          console.error("Lengths no longer match after", annStep);
-          console.error("Resulting doc:", tr.doc);
-          return;
-        }
+      // Sanity checking.
+      if (this.outline.length !== tr.doc.nodeSize && firstFailure) {
+        firstFailure = false;
+        console.error("(Receive) Lengths no longer match after", annStep);
+        console.error("  Resulting doc:", tr.doc);
       }
     }
 
-    this.view.updateState(this.view.state.apply(tr));
+    return (undoTr) => {
+      for (let i = undoSteps.length - 1; i >= 0; i--) {
+        undoTr.step(undoSteps[i]);
+      }
+      for (let i = undoOutlineChanges.length - 1; i >= 0; i--) {
+        undoOutlineChanges[i]();
+      }
+    };
   }
 }
