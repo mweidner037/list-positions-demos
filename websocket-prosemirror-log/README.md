@@ -1,4 +1,4 @@
-# WebSocket-Prosemirror
+# WebSocket-Prosemirror-Log
 
 A basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), a WebSocket server, and [ProseMirror](https://prosemirror.net/).
 

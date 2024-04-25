@@ -1,6 +1,6 @@
 # Suggested Changes
 
-Extension of [websocket-prosemirror](../websocket-prosemirror/) that adds "Suggested Changes".
+Extension of [websocket-prosemirror-blocks](../websocket-prosemirror-blocks/) that adds "Suggested Changes".
 
 Select some text and click "Suggest change" to create a suggestion on the right side. Edit it and accept/reject.
 
