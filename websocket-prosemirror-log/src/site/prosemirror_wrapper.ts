@@ -49,10 +49,13 @@ export class ProseMirrorWrapper {
   private clientCounter = 0;
   private outline: Outline;
 
+  /**
+   * Our pending local mutations, which have not yet been confirmed by the server.
+   */
   private pendingMutations: {
     readonly mutation: Mutation;
     /**
-     * Function to undo the local application of this mutation (PM + CRDT state).
+     * Function to undo the local application of this mutation (PM & CRDT state).
      *
      * For changes to PM, apply them to undoTr instead of directly to the view.
      */
@@ -70,7 +73,7 @@ export class ProseMirrorWrapper {
           ...exampleSetup({ schema }),
           new Plugin({
             // Notify the history plugin not to merge steps, like in the prosemirror-collab
-            // plugin. (Not sure if this is actually necessary.)
+            // plugin. (TODO: is this actually necessary?)
             historyPreserveItems: true,
           }),
         ],
@@ -209,7 +212,11 @@ export class ProseMirrorWrapper {
       // Sanity checking.
       const doc = i === tr.steps.length - 1 ? tr.doc : tr.docs[i + 1];
       if (this.outline.length !== doc.nodeSize) {
-        console.error("(Receive) Lengths no longer match after", step);
+        console.error(
+          "(Receive) Lengths no longer match after",
+          annSteps.at(-1),
+          step
+        );
         console.error("  Resulting doc:", doc);
         return;
       }
@@ -237,7 +244,7 @@ export class ProseMirrorWrapper {
   }
 
   /**
-   * Computes a ReplacePositions corresponding to a ReplaceStep or one side of
+   * Computes ReplacePositions corresponding to a ReplaceStep or one side of
    * a ReplaceAroundStep.
    *
    * @param bias Whether to bias the insertion Position towards the left or right side of
@@ -272,6 +279,7 @@ export class ProseMirrorWrapper {
       }
 
       // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
+      // (Lazy version of calling this.outline.order.createPositions.)
       const [startPos, meta] = this.outline.insertAt(
         insertionIndex,
         insertionCount
@@ -296,8 +304,8 @@ export class ProseMirrorWrapper {
    * Updates this.outline to match the effect of a ReplaceStep or one side of
    * a ReplaceAroundStep.
    *
-   * from and to must match the actual applied step and not be invalidated by earlier
-   * changes within this.outline.
+   * from and to must match the rebased step (in the current state)
+   * and not be invalidated by earlier changes to this.outline.
    *
    * @returns Function that undoes the changes to this.outline.
    */
@@ -314,10 +322,10 @@ export class ProseMirrorWrapper {
     }
 
     return () => {
-      for (const pos of toDelete) this.outline.add(pos);
       if (positions.insert) {
         this.outline.delete(positions.insert.startPos, insertionCount);
       }
+      for (const pos of toDelete) this.outline.add(pos);
     };
   }
 
@@ -337,7 +345,7 @@ export class ProseMirrorWrapper {
     let to: number;
     if (positions.delete) {
       // The original deleted range was nonempty, so even if already deleted,
-      // it is never the case that startIndex > endIndex.
+      // it is never the case that to < from.
       from = this.outline.indexOfCursor(positions.delete.startPos, "right");
       to = this.outline.indexOfCursor(positions.delete.endPos, "left");
       if (positions.insert) {
@@ -555,7 +563,11 @@ export class ProseMirrorWrapper {
       // Sanity checking.
       if (this.outline.length !== tr.doc.nodeSize && firstFailure) {
         firstFailure = false;
-        console.error("(Receive) Lengths no longer match after", annStep);
+        console.error(
+          "(Receive) Lengths no longer match after",
+          annStep,
+          tr.steps.at(-1)
+        );
         console.error("  Resulting doc:", tr.doc);
       }
     }
@@ -591,11 +603,11 @@ function maybeStep(
     // I can't seem to prevent it.
     // See https://github.com/ProseMirror/prosemirror/issues/873
     // E.g.:
-    // - Start with 3 paras.
+    // - Start with 3 paragraphs.
     // - Alice converts first two into an ordered list.
     // - While offline, Bob converts last two into an ordered list.
     // - Bob's change rebased: ReplaceAroundStep applying the <ol></ol> fails
-    // as expected. But then this ReplaceStep applying the <li></li>'s fails with
+    // as expected. But then the ReplaceStep applying the <li></li>'s fails with
     // an error (invalid content for list-node: <>), which I think is because
     // the 3rd <li> is no longer inside an <ol>, hence gets upset.
     console.log(`${annStep.type} errored:`, `${err}`, step, annStep);

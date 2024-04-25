@@ -1,5 +1,10 @@
 import type { BunchMeta, Position } from "list-positions";
 
+/**
+ * Positions for a ReplaceStep or one part of a ReplaceAroundStep.
+ *
+ * At least one of insert or delete is guaranteed to be defined.
+ */
 export type ReplacePositions = {
   insert?: { meta: BunchMeta | null; startPos: Position };
   delete?: {
@@ -10,6 +15,12 @@ export type ReplacePositions = {
   };
 };
 
+/**
+ * A ProseMirror step, annotated with Positions in place of list indices (PM positions).
+ *
+ * The Positions let us rebase steps "as-is", without explicitly transforming indices.
+ * In other words, an AnnotatedStep is CRDT-style, while a plain step is OT-style.
+ */
 export type AnnotatedStep =
   | {
       type: "replace";
@@ -27,6 +38,9 @@ export type AnnotatedStep =
       structure: boolean;
     }
   | {
+      // TODO: If an insertion is applied after a concurrent changeMark, it won't
+      // get the mark (according to PM's default logic).
+      // Can we change it to get the mark anyway (Peritext-style)?
       type: "changeMark";
       // Else remove.
       isAdd: boolean;
@@ -34,7 +48,6 @@ export type AnnotatedStep =
       fromPos: Position;
       // Left cursor - doesn't expand.
       // TODO: do expand for e.g. bold?
-      // TODO: test behavior of marks across concurrent split - will it complain that the mark crosses a non-inline node?
       toPos: Position;
       markJSON: unknown;
     }

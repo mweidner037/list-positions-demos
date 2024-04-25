@@ -76,6 +76,12 @@ export class RichTextServer {
     const msg = JSON.parse(data) as Message;
     switch (msg.type) {
       case "mutation":
+        // Here is where you can choose to reject/alter the mutation, before
+        // adding it to the log (which is the source of truth) and
+        // broadcasting it.
+        // TODO: Need a way to tell a client when one of its mutations has
+        // been acknowledged but not accepted as-is, so that the client can remove
+        // that mutation from its pendingMutations.
         this.mutations.push(msg.mutation);
         this.echo(ws, data);
         break;
