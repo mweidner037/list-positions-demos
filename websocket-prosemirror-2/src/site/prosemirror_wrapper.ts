@@ -26,7 +26,13 @@ import {
 import "prosemirror-menu/style/menu.css";
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-example-setup/style/style.css";
-import { MAX_POSITION, MIN_POSITION, Outline } from "list-positions";
+import {
+  MAX_POSITION,
+  MIN_POSITION,
+  OrderSavedState,
+  Outline,
+  OutlineSavedState,
+} from "list-positions";
 
 const DEBUG = false;
 
@@ -73,14 +79,11 @@ export class ProseMirrorWrapper {
     });
 
     // Insert initial Positions to match the doc size, identical on all replicas.
-    const initSize = this.view.state.doc.nodeSize;
-    const [initPos] = this.outline.order.createPositions(
-      MIN_POSITION,
-      MAX_POSITION,
-      initSize,
-      { bunchID: "INIT" }
+    const [orderSavedState, outlineSavedState] = makeInitialState(
+      this.view.state.doc.nodeSize
     );
-    this.outline.add(initPos, initSize);
+    this.outline.order.load(orderSavedState);
+    this.outline.load(outlineSavedState);
   }
 
   private dispatchTransaction(tr: Transaction): void {
@@ -346,7 +349,12 @@ export class ProseMirrorWrapper {
           "right"
         );
         if (DEBUG && (insertionIndex < from || insertionIndex > to)) {
-          console.log("Expanding delete range for insert", from, to, insertionIndex);
+          console.log(
+            "Expanding delete range for insert",
+            from,
+            to,
+            insertionIndex
+          );
           console.log(positions.insert.startPos, [...this.outline.positions()]);
         }
         from = Math.min(from, insertionIndex);
@@ -594,4 +602,19 @@ function maybeStep(
     console.log(`${annStep.type} errored:`, `${err}`, step, annStep);
     return false;
   }
+}
+
+function makeInitialState(
+  initSize: number
+): [order: OrderSavedState, outline: OutlineSavedState] {
+  const outline = new Outline();
+  const [initPos] = outline.order.createPositions(
+    MIN_POSITION,
+    MAX_POSITION,
+    initSize,
+    { bunchID: "INIT" }
+  );
+  outline.add(initPos, initSize);
+
+  return [outline.order.save(), outline.save()];
 }
