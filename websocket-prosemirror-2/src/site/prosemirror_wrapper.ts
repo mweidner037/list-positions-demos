@@ -9,14 +9,7 @@ import { EditorView } from "prosemirror-view";
 import { Mark, Schema, Slice } from "prosemirror-model";
 import { schema as schemaBasic } from "prosemirror-schema-basic";
 import { addListNodes } from "prosemirror-schema-list";
-import {
-  buildInputRules,
-  buildKeymap,
-  buildMenuItems,
-} from "prosemirror-example-setup";
-import { keymap } from "prosemirror-keymap";
-import { baseKeymap } from "prosemirror-commands";
-import { menuBar } from "prosemirror-menu";
+import { exampleSetup } from "prosemirror-example-setup";
 import { maybeRandomString } from "maybe-random-string";
 import {
   AddMarkStep,
@@ -34,8 +27,6 @@ import "prosemirror-menu/style/menu.css";
 import "prosemirror-view/style/prosemirror.css";
 import "prosemirror-example-setup/style/style.css";
 import { MAX_POSITION, MIN_POSITION, Outline } from "list-positions";
-
-// TODO: remove menu buttons: undo/redo
 
 const DEBUG = false;
 
@@ -69,14 +60,12 @@ export class ProseMirrorWrapper {
     this.view = new EditorView(document.querySelector("#editor"), {
       state: EditorState.create({
         schema,
-        // Modified from prosemirror-example-setup.
         plugins: [
-          buildInputRules(schema),
-          keymap(buildKeymap(schema)),
-          keymap(baseKeymap),
-          menuBar({ floating: true, content: buildMenuItems(schema).fullMenu }),
+          ...exampleSetup({ schema }),
           new Plugin({
-            props: { attributes: { class: "ProseMirror-example-setup-style" } },
+            // Notify the history plugin not to merge steps, like in the prosemirror-collab
+            // plugin. (Not sure if this is actually necessary.)
+            historyPreserveItems: true,
           }),
         ],
       }),
@@ -420,6 +409,7 @@ export class ProseMirrorWrapper {
       );
     }
 
+    tr.setMeta("addToHistory", false);
     this.view.updateState(this.view.state.apply(tr));
   }
 
