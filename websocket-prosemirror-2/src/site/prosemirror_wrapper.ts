@@ -145,7 +145,7 @@ export class ProseMirrorWrapper {
         // Update this.outline to reflect the local changes.
         // Important to update later indices first.
         // TODO: Avoid capturing step in closure.
-        undoOutlineChanges.push(() =>
+        undoOutlineChanges.push(
           this.applyReplacePositions(
             annStep.rightPositions,
             step.gapTo,
@@ -153,7 +153,7 @@ export class ProseMirrorWrapper {
             sliceAfterInsert
           )
         );
-        undoOutlineChanges.push(() =>
+        undoOutlineChanges.push(
           this.applyReplacePositions(
             annStep.leftPositions,
             step.from,
@@ -345,6 +345,10 @@ export class ProseMirrorWrapper {
           positions.insert.startPos,
           "right"
         );
+        if (DEBUG && (insertionIndex < from || insertionIndex > to)) {
+          console.log("Expanding delete range for insert", from, to, insertionIndex);
+          console.log(positions.insert.startPos, [...this.outline.positions()]);
+        }
         from = Math.min(from, insertionIndex);
         to = Math.max(to, insertionIndex);
       }
