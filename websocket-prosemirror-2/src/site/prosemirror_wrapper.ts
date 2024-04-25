@@ -147,7 +147,6 @@ export class ProseMirrorWrapper {
 
         // Update this.outline to reflect the local changes.
         // Important to update later indices first.
-        // TODO: Avoid capturing step in closure.
         undoOutlineChanges.push(
           this.applyReplacePositions(
             annStep.rightPositions,
@@ -408,8 +407,8 @@ export class ProseMirrorWrapper {
       ) {
         this.pendingMutations.shift();
       }
-      // TODO: Handle the case where the server deliberately skipped one of our messages.
-      // Needs to ack this fact.
+      // TODO: If the server could deliberately skip (or modify) messages, we need
+      // to get an ack from the server and make use of it.
     }
 
     for (let p = 0; p < this.pendingMutations.length; p++) {

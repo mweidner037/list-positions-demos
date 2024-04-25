@@ -8,8 +8,10 @@ const heartbeatInterval = 30000;
  * Server that assigns mutations a sequence number and echoes them to all
  * clients in order.
  *
- * TODO: instead store literal state + CRDT state only, to demo that we
- * don't need the whole history?
+ * We store the full Mutation log for welcoming future clients. In principle,
+ * you could instead store just the current ProseMirror + Outline states and
+ * use those to welcome clients. (For reconnections, you would also need a vector
+ * clock or similar, to tell clients which of their past mutations have been acked.)
  */
 export class RichTextServer {
   private readonly mutations: Mutation[] = [];
