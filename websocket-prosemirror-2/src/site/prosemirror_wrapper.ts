@@ -1,4 +1,9 @@
-import { AnnotatedStep, Mutation, idEquals } from "../common/mutation";
+import {
+  AnnotatedStep,
+  Mutation,
+  ReplacePositions,
+  idEquals,
+} from "../common/mutation";
 import { EditorState, Plugin, Transaction } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { Mark, Schema, Slice } from "prosemirror-model";
@@ -104,182 +109,69 @@ export class ProseMirrorWrapper {
       if (step instanceof ReplaceStep) {
         const annStep: AnnotatedStep = {
           type: "replace",
+          positions: this.toReplacePositions(
+            step.from,
+            step.to,
+            step.slice.size,
+            "left"
+          ),
           sliceJSON: step.slice.toJSON(),
           // @ts-expect-error structure marked internal
           structure: step.structure,
         };
 
-        if (step.slice.size !== 0) {
-          // There is content to insert.
-          let insertionIndex: number;
-          if (step.to === step.from) {
-            // No deletion, just insert before the gap.
-            insertionIndex = step.from;
-          } else if (step.to - step.from >= 2) {
-            // Insert in the middle of the deleted positions, so that the resolved
-            // [from, to) range always contains the insertion position.
-            insertionIndex = step.from + 1;
-          } else {
-            // Arbitrary choice: insert after the deleted position.
-            // Either way, we may have to stretch the resolved [from, to) range to include
-            // the insertion position (so that the resolved ReplaceStep is well-formed),
-            // which awkwardly deletes concurrently-inserted content.
-            insertionIndex = step.from + 1;
-          }
-
-          // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
-          const [startPos, meta] = this.outline.insertAt(
-            insertionIndex,
-            step.slice.size
-          );
-          this.outline.delete(startPos, step.slice.size);
-
-          annStep.insert = { meta, startPos };
-        }
-
-        if (step.to > step.from) {
-          // There is deleted content.
-          annStep.delete = {
-            startPos: this.outline.cursorAt(step.from, "right"),
-            endPos: this.outline.cursorAt(step.to, "left"),
-          };
-        }
-
         // Update this.outline to reflect the local changes.
-        const toDelete = [...this.outline.positions(step.from, step.to)];
-        for (const pos of toDelete) this.outline.delete(pos);
-        undoOutlineChanges.push(() => {
-          for (const pos of toDelete) this.outline.add(pos);
-        });
-
-        if (annStep.insert) {
-          const startPos = annStep.insert.startPos;
-          const count = step.slice.size;
-          this.outline.add(startPos, count);
-          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
-        }
+        undoOutlineChanges.push(
+          this.applyReplacePositions(
+            annStep.positions,
+            step.from,
+            step.to,
+            step.slice.size
+          )
+        );
 
         annSteps.push(annStep);
       } else if (step instanceof ReplaceAroundStep) {
         const sliceAfterInsert = step.slice.size - step.insert;
         const annStep: AnnotatedStep = {
           type: "replaceAround",
+          leftPositions: this.toReplacePositions(
+            step.from,
+            step.gapFrom,
+            step.insert,
+            "left"
+          ),
+          rightPositions: this.toReplacePositions(
+            step.gapTo,
+            step.to,
+            sliceAfterInsert,
+            "right"
+          ),
           sliceJSON: step.slice.toJSON(),
           sliceInsert: step.insert,
-          sliceAfterInsert,
           // @ts-expect-error structure marked internal
           structure: step.structure,
         };
 
-        if (step.insert > 0) {
-          // There is content to insert on the left side of the gap.
-          let insertionIndex: number;
-          if (step.gapFrom === step.from) {
-            // No deletion, just insert before the gap.
-            insertionIndex = step.from;
-          } else if (step.gapFrom - step.from >= 2) {
-            // Insert in the middle of the deleted positions, so that the resolved
-            // [from, gapFrom) range always contains the insertion position.
-            insertionIndex = step.from + 1;
-          } else {
-            // Insert before the deleted position. That way, if we have
-            // to stretch the resolved [from, gapFrom) range to include the insertion position
-            // (so that the resolved ReplaceAroundStep is well-formed),
-            // then the range expands away from the gap, which is probably more important (e.g. a paragraph's contents).
-            insertionIndex = step.from;
-          }
-
-          // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
-          const [startPos, meta] = this.outline.insertAt(
-            insertionIndex,
-            step.insert
-          );
-          this.outline.delete(startPos, step.insert);
-
-          annStep.insertLeft = { meta, startPos };
-        }
-
-        if (sliceAfterInsert > 0) {
-          // There is content to insert on the right side of the gap.
-          let insertionIndex: number;
-          if (step.to === step.gapTo) {
-            // No deletion, just insert after the gap.
-            insertionIndex = step.to;
-          } else if (step.to - step.gapTo >= 2) {
-            // Insert in the middle of the deleted positions, so that the resolved
-            // [gapTo, to) range always contains the insertion position.
-            insertionIndex = step.to - 1;
-          } else {
-            // Insert after the deleted position. That way, if we have
-            // to stretch the resolved [gapTo, to) range to include the insertion position
-            // (so that the resolved ReplaceAroundStep is well-formed),
-            // then the range expands away from the gap, which is probably more important (e.g. a paragraph's contents).
-            insertionIndex = step.to;
-          }
-
-          // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
-          const [startPos, meta] = this.outline.insertAt(
-            insertionIndex,
-            sliceAfterInsert
-          );
-          this.outline.delete(startPos, sliceAfterInsert);
-
-          annStep.insertRight = { meta, startPos };
-        }
-
-        if (step.gapFrom > step.from) {
-          // There is deleted content before the gap.
-          annStep.deleteLeft = {
-            startPos: this.outline.cursorAt(step.from, "right"),
-            endPos: this.outline.cursorAt(step.gapFrom, "left"),
-          };
-        }
-
-        if (step.to > step.gapTo) {
-          // There is deleted content after the gap.
-          annStep.deleteRight = {
-            startPos: this.outline.cursorAt(step.gapTo, "right"),
-            endPos: this.outline.cursorAt(step.to, "left"),
-          };
-        }
-
         // Update this.outline to reflect the local changes.
-        const toDelete = [
-          ...this.outline.positions(step.from, step.gapFrom),
-          ...this.outline.positions(step.gapTo, step.to),
-        ];
-        for (const pos of toDelete) this.outline.delete(pos);
-        undoOutlineChanges.push(() => {
-          for (const pos of toDelete) this.outline.add(pos);
-        });
-
-        if (annStep.insertRight) {
-          const startPos = annStep.insertRight.startPos;
-          const count = step.slice.size - step.insert;
-          this.outline.add(startPos, count);
-          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
-        }
-        if (annStep.insertLeft) {
-          const startPos = annStep.insertLeft.startPos;
-          const count = step.insert;
-          this.outline.add(startPos, count);
-          undoOutlineChanges.push(() => this.outline.delete(startPos, count));
-        }
-
-        if (
-          !(
-            (annStep.insertLeft || annStep.deleteLeft) &&
-            (annStep.insertRight || annStep.deleteRight)
+        // Important to update later indices first.
+        // TODO: Avoid capturing step in closure.
+        undoOutlineChanges.push(() =>
+          this.applyReplacePositions(
+            annStep.rightPositions,
+            step.gapTo,
+            step.to,
+            sliceAfterInsert
           )
-        ) {
-          // Without an insert or delete command, we won't know what to use as from/to.
-          // We could add a separate field to handle that case, but I'm not sure it ever happens.
-          console.warn(
-            "Unsupported step type, skipping: ReplaceAroundStep with no insert or delete on one side",
-            step.toJSON()
-          );
-          continue;
-        }
+        );
+        undoOutlineChanges.push(() =>
+          this.applyReplacePositions(
+            annStep.leftPositions,
+            step.from,
+            step.gapFrom,
+            step.insert
+          )
+        );
 
         annSteps.push(annStep);
       } else if (
@@ -353,6 +245,129 @@ export class ProseMirrorWrapper {
     this.onLocalMutation(mutation);
   }
 
+  /**
+   * Computes a ReplacePositions corresponding to a ReplaceStep or one side of
+   * a ReplaceAroundStep.
+   *
+   * @param bias Whether to bias the insertion Position towards the left or right side of
+   * the deleted range.
+   */
+  private toReplacePositions(
+    from: number,
+    to: number,
+    insertionCount: number,
+    bias: "left" | "right"
+  ): ReplacePositions {
+    if (from === to && insertionCount === 0) {
+      throw new Error("Unsupported: trivial replacement");
+    }
+
+    const ans: ReplacePositions = {};
+    if (insertionCount !== 0) {
+      // There is content to insert.
+      let insertionIndex: number;
+      if (to === from) {
+        insertionIndex = from;
+      } else if (to - from >= 2) {
+        // Insert in the middle of the deleted positions, so that the resolved
+        // [from, to) range always contains the insertion position.
+        insertionIndex = bias === "left" ? from + 1 : to - 1;
+      } else {
+        // Bias the insert in the given direction. That way, if we have
+        // to stretch the resolved [from, to) range to include the insertion position
+        // (so that the resolved Replace[Around]Step is well-formed),
+        // then the range expands in the given direction.
+        insertionIndex = bias === "left" ? from : to;
+      }
+
+      // Use insertAt-then-delete to create the positions without actually changing this.outline yet.
+      const [startPos, meta] = this.outline.insertAt(
+        insertionIndex,
+        insertionCount
+      );
+      this.outline.delete(startPos, insertionCount);
+
+      ans.insert = { meta, startPos };
+    }
+
+    if (to > from) {
+      // There is deleted content.
+      ans.delete = {
+        startPos: this.outline.cursorAt(from, "right"),
+        endPos: this.outline.cursorAt(to, "left"),
+      };
+    }
+
+    return ans;
+  }
+
+  /**
+   * Updates this.outline to match the effect of a ReplaceStep or one side of
+   * a ReplaceAroundStep.
+   *
+   * from and to must match the actual applied step and not be invalidated by earlier
+   * changes within this.outline.
+   *
+   * @returns Function that undoes the changes to this.outline.
+   */
+  private applyReplacePositions(
+    positions: ReplacePositions,
+    from: number,
+    to: number,
+    insertionCount: number
+  ): () => void {
+    const toDelete = [...this.outline.positions(from, to)];
+    for (const pos of toDelete) this.outline.delete(pos);
+    if (positions.insert) {
+      this.outline.add(positions.insert.startPos, insertionCount);
+    }
+
+    return () => {
+      for (const pos of toDelete) this.outline.add(pos);
+      if (positions.insert) {
+        this.outline.delete(positions.insert.startPos, insertionCount);
+      }
+    };
+  }
+
+  /**
+   * Returns the rebased range [from, to) corresponding to positions.
+   *
+   * Also updates this.outline's Order metadata.
+   */
+  private fromReplacePositions(
+    positions: ReplacePositions
+  ): [from: number, to: number] {
+    if (positions.insert?.meta) {
+      this.outline.order.addMetas([positions.insert.meta]);
+    }
+
+    let from: number;
+    let to: number;
+    if (positions.delete) {
+      // The original deleted range was nonempty, so even if already deleted,
+      // it is never the case that startIndex > endIndex.
+      from = this.outline.indexOfCursor(positions.delete.startPos, "right");
+      to = this.outline.indexOfCursor(positions.delete.endPos, "left");
+      if (positions.insert) {
+        // Ensure from <= insertionIndex <= to, stretching the deleted the range if needed.
+        // Otherwise, our changes to this.outline won't match ProseMirror's changes.
+        const insertionIndex = this.outline.indexOfPosition(
+          positions.insert.startPos,
+          "right"
+        );
+        from = Math.min(from, insertionIndex);
+        to = Math.max(to, insertionIndex);
+      }
+    } else {
+      // Use insertion index, i.e., the index where startPos will be once present.
+      from = this.outline.indexOfPosition(positions.insert!.startPos, "right");
+      to = from;
+    }
+
+    return [from, to];
+  }
+
   receive(mutations: Mutation[]): void {
     const tr = this.view.state.tr;
 
@@ -424,173 +439,62 @@ export class ProseMirrorWrapper {
     for (const annStep of mutation.annSteps) {
       switch (annStep.type) {
         case "replace": {
-          if (annStep.insert?.meta) {
-            this.outline.order.addMetas([annStep.insert.meta]);
-          }
-
-          let from: number;
-          let to: number;
-          if (annStep.delete) {
-            // The original deleted range was nonempty, so even if already deleted,
-            // it is never the case that startIndex > endIndex.
-            from = this.outline.indexOfCursor(annStep.delete.startPos, "right");
-            to = this.outline.indexOfCursor(annStep.delete.endPos, "left");
-            if (annStep.insert) {
-              // Ensure from <= insertionIndex <= to, stretching the deleted the range if needed.
-              // Otherwise, our changes to this.outline won't match ProseMirror's changes.
-              const insertionIndex = this.outline.indexOfPosition(
-                annStep.insert.startPos,
-                "right"
-              );
-              from = Math.min(from, insertionIndex);
-              to = Math.max(to, insertionIndex);
-            }
-          } else {
-            // Use insertion index, i.e., the index where startPos will be once present.
-            from = this.outline.indexOfPosition(
-              annStep.insert!.startPos,
-              "right"
-            );
-            to = from;
-          }
-
+          const [from, to] = this.fromReplacePositions(annStep.positions);
           const slice = Slice.fromJSON(schema, annStep.sliceJSON);
           const step = new ReplaceStep(from, to, slice, annStep.structure);
+
           const success = maybeStep(tr, step, annStep);
           if (success) {
-            // Update Outline to match.
-            const toDelete = [...this.outline.positions(from, to)];
-            for (const pos of toDelete) this.outline.delete(pos);
-            if (annStep.insert) {
-              this.outline.add(annStep.insert.startPos, slice.size);
-            }
-
-            // Record undo command.
+            // Update Outline to match and record undo command.
             undoSteps.push(step.invert(tr.docs.at(-1)!));
-            const sliceSize = slice.size;
-            undoOutlineChanges.push(() => {
-              for (const pos of toDelete) this.outline.add(pos);
-              if (annStep.insert) {
-                this.outline.delete(annStep.insert.startPos, sliceSize);
-              }
-            });
+            undoOutlineChanges.push(
+              this.applyReplacePositions(
+                annStep.positions,
+                from,
+                to,
+                slice.size
+              )
+            );
           }
           break;
         }
         case "replaceAround": {
-          if (annStep.insertLeft?.meta) {
-            this.outline.order.addMetas([annStep.insertLeft.meta]);
-          }
-          if (annStep.insertRight?.meta) {
-            this.outline.order.addMetas([annStep.insertRight.meta]);
-          }
-
-          let from: number;
-          let gapFrom: number;
-          if (annStep.deleteLeft) {
-            // The original deleted range was nonempty, so even if already deleted,
-            // it is never the case that startIndex > endIndex.
-            from = this.outline.indexOfCursor(
-              annStep.deleteLeft.startPos,
-              "right"
-            );
-            gapFrom = this.outline.indexOfCursor(
-              annStep.deleteLeft.endPos,
-              "left"
-            );
-            if (annStep.insertLeft) {
-              // Ensure from <= insertionIndex <= gapFrom, stretching the deleted the range if needed.
-              // Otherwise, our changes to this.outline won't match ProseMirror's changes.
-              const insertionIndex = this.outline.indexOfPosition(
-                annStep.insertLeft.startPos,
-                "right"
-              );
-              from = Math.min(from, insertionIndex);
-              gapFrom = Math.max(gapFrom, insertionIndex);
-            }
-          } else {
-            // Use insertion index, i.e., the index where startPos will be once present.
-            from = this.outline.indexOfPosition(
-              annStep.insertLeft!.startPos,
-              "right"
-            );
-            gapFrom = from;
-          }
-
-          let gapTo: number;
-          let to: number;
-          if (annStep.deleteRight) {
-            gapTo = this.outline.indexOfCursor(
-              annStep.deleteRight.startPos,
-              "right"
-            );
-            to = this.outline.indexOfCursor(annStep.deleteRight.endPos, "left");
-            if (annStep.insertRight) {
-              // Ensure gapTo <= insertionIndex <= to, stretching the deleted the range if needed.
-              // Otherwise, our changes to this.outline won't match ProseMirror's changes.
-              const insertionIndex = this.outline.indexOfPosition(
-                annStep.insertRight.startPos,
-                "right"
-              );
-              gapTo = Math.min(gapTo, insertionIndex);
-              to = Math.max(to, insertionIndex);
-            }
-          } else {
-            // Use insertion index, i.e., the index where startPos will be once present.
-            gapTo = this.outline.indexOfPosition(
-              annStep.insertRight!.startPos,
-              "right"
-            );
-            to = gapTo;
-          }
-
+          const [from, gapFrom] = this.fromReplacePositions(
+            annStep.leftPositions
+          );
+          const [gapTo, to] = this.fromReplacePositions(annStep.rightPositions);
+          const slice = Slice.fromJSON(schema, annStep.sliceJSON);
           const step = new ReplaceAroundStep(
             from,
             to,
             gapFrom,
             gapTo,
-            Slice.fromJSON(schema, annStep.sliceJSON),
+            slice,
             annStep.sliceInsert,
             annStep.structure
           );
+
           const success = maybeStep(tr, step, annStep);
           if (success) {
-            // Update Outline to match.
-            const toDelete = [
-              ...this.outline.positions(from, gapFrom),
-              ...this.outline.positions(gapTo, to),
-            ];
-            for (const pos of toDelete) this.outline.delete(pos);
-            if (annStep.insertLeft) {
-              this.outline.add(
-                annStep.insertLeft.startPos,
-                annStep.sliceInsert
-              );
-            }
-            if (annStep.insertRight) {
-              this.outline.add(
-                annStep.insertRight.startPos,
-                annStep.sliceAfterInsert
-              );
-            }
-
-            // Record undo command.
+            // Update Outline to match and record undo command.
             undoSteps.push(step.invert(tr.docs.at(-1)!));
-            undoOutlineChanges.push(() => {
-              for (const pos of toDelete) this.outline.add(pos);
-              if (annStep.insertLeft) {
-                this.outline.delete(
-                  annStep.insertLeft.startPos,
-                  annStep.sliceInsert
-                );
-              }
-              if (annStep.insertRight) {
-                this.outline.delete(
-                  annStep.insertRight.startPos,
-                  annStep.sliceAfterInsert
-                );
-              }
-            });
+            // Important to update later indices first.
+            undoOutlineChanges.push(
+              this.applyReplacePositions(
+                annStep.rightPositions,
+                gapTo,
+                to,
+                slice.size - annStep.sliceInsert
+              )
+            );
+            undoOutlineChanges.push(
+              this.applyReplacePositions(
+                annStep.leftPositions,
+                from,
+                gapFrom,
+                annStep.sliceInsert
+              )
+            );
           }
           break;
         }
