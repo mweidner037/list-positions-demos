@@ -1,8 +1,8 @@
 # WebSocket-Prosemirror-Log
 
-A basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), a WebSocket server, and [ProseMirror](https://prosemirror.net/). It supports arbitrary schemas and works similarly to ProseMirror's built-in collaboration system, at the expense of representing the state only as a log, instead of in a "list-positions-native" way.
+A basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme), a WebSocket server, and [ProseMirror](https://prosemirror.net/). It supports arbitrary schemas and works similarly to ProseMirror's built-in collaboration system, using a server-authoritative log of changes.
 
-When a client makes a change, a _mutation_ describing that change is sent to the server in JSON format. The server assigns that mutation a sequence number in the log and echoes it to all connected clients. It also stores the log to send to future clients.
+When a client makes a change, a _mutation_ describing that change is sent to the server in JSON format. The server assigns that mutation a sequence number in the log and echoes it to all connected clients. It also stores the log to send to future clients. (In principle, the server could instead store the literal ProseMirror & list-positions states.)
 
 A client's state is always given by:
 
