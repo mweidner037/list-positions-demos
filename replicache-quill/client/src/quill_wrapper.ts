@@ -39,30 +39,6 @@ export type WrapperOp =
   | {type: 'marks'; marks: TimestampMark[]};
 
 export class QuillWrapper {
-  /**
-   * Call to get an empty RichList, load initial state, then
-   * pass to constructor.
-   */
-  static newRichList(): RichList<string> {
-    const richList = new RichList<string>({expandRules});
-
-    // Create initial "\n", required by Quill, with the same bunchID
-    // & BunchMeta on all replicas.
-    // TODO: This state is not actually stored in Replicache.
-    // That's okay because we never mutate it (except for marks,
-    // stored separately), but it is confusing.
-    // Would be nicer to create this char on the server in createSpace().
-    const [pos] = richList.order.createPositions(
-      MIN_POSITION,
-      MAX_POSITION,
-      1,
-      {bunchID: 'INIT'},
-    );
-    richList.list.set(pos, '\n');
-
-    return richList;
-  }
-
   readonly editor: Quill;
   /**
    * Instead of editing this directly, use the applyOps method.
@@ -287,6 +263,32 @@ export class QuillWrapper {
     } finally {
       this.ourChange = false;
     }
+  }
+
+  /**
+   * Call to get an empty RichList, set initial state, then
+   * pass to constructor.
+   */
+  static newRichList(): RichList<string> {
+    const richList = new RichList<string>({expandRules});
+    richList.load(this.makeInitialState());
+    return richList;
+  }
+
+  /**
+   * Fake initial saved state that's identical on all replicas: a single
+   * "\n", to match Quill's initial state.
+   */
+  private static makeInitialState() {
+    const richList = new RichList<string>();
+    const [pos] = richList.order.createPositions(
+      MIN_POSITION,
+      MAX_POSITION,
+      1,
+      {bunchID: 'INIT'},
+    );
+    richList.list.set(pos, '\n');
+    return richList.save();
   }
 }
 

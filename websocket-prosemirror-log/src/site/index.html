@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+
+    <style>
+      /* Styles based on https://prosemirror.net/examples/collab/ */
+      #editor {
+        background: white;
+        color: black;
+        background-clip: padding-box;
+        border-radius: 4px;
+        border: 2px solid rgba(0, 0, 0, 0.2);
+        padding: 5px 0;
+        margin-bottom: 23px;
+      }
+
+      #editor-wrapper {
+        width: 720px;
+      }
+
+      .ProseMirror {
+        padding: 4px 8px 4px 14px;
+        line-height: 1.2;
+        outline: none;
+        height: 500px;
+        overflow-y: auto;
+      }
+    </style>
+
+    <title>WebSocket-Prosemirror-Log</title>
+  </head>
+
+  <body>
+    <div>
+      <input type="checkbox" id="connected" checked />
+      <label for="connected">Connected</label>
+      |
+      <a
+        href="https://github.com/mweidner037/list-demos/tree/master/websocket-prosemirror-log#readme"
+        >Info and source code</a
+      >
+      <hr />
+    </div>
+
+    <div id="editor-wrapper">
+      <div id="editor"></div>
+    </div>
+  </body>
+</html>
