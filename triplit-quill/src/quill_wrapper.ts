@@ -7,7 +7,7 @@ import {
   RichListSavedState,
   TimestampMark,
   sliceFromSpan,
-} from "list-formatting";
+} from "@list-positions/formatting";
 import { BunchMeta, Position } from "list-positions";
 import "quill/dist/quill.snow.css";
 

@@ -6,7 +6,7 @@ import {
   RichList,
   TimestampMark,
   sliceFromSpan,
-} from 'list-formatting';
+} from '@list-positions/formatting';
 import {
   BunchMeta,
   MAX_POSITION,

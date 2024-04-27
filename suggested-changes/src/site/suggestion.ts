@@ -1,4 +1,4 @@
-import { TimestampFormatting } from "list-formatting";
+import { TimestampFormatting } from "@list-positions/formatting";
 import {
   List,
   MAX_POSITION,

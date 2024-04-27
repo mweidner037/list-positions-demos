@@ -32,7 +32,7 @@ CREATE TABLE char_entries (
 
 ALTER TABLE char_entries ENABLE ELECTRIC;
 
--- Add-only log of TimestampMarks from list-formatting.
+-- Add-only log of TimestampMarks from @list-positions/formatting.
 CREATE TABLE formatting_marks (
   -- String encoding of (creatorID, timestamp), used since we need a primary key
   -- but don't want to waste space on a UUID.

@@ -1,4 +1,4 @@
-import { TimestampMark } from "list-formatting";
+import { TimestampMark } from "@list-positions/formatting";
 import {
   BunchMeta,
   ListSavedState,

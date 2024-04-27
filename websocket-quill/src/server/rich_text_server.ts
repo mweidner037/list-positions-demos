@@ -1,4 +1,4 @@
-import { TimestampMark } from "list-formatting";
+import { TimestampMark } from "@list-positions/formatting";
 import { List } from "list-positions";
 import { WebSocket, WebSocketServer } from "ws";
 import { Message } from "../common/messages";

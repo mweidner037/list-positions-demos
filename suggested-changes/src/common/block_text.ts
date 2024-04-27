@@ -1,4 +1,4 @@
-import { TimestampFormattingSavedState } from "list-formatting";
+import { TimestampFormattingSavedState } from "@list-positions/formatting";
 import { ListSavedState, OrderSavedState } from "list-positions";
 
 /**

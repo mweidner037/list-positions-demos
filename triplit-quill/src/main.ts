@@ -1,5 +1,5 @@
 import { ClientFetchResult, TriplitClient } from "@triplit/client";
-import { RichList } from "list-formatting";
+import { RichList } from "@list-positions/formatting";
 import {
   MAX_POSITION,
   MIN_POSITION,

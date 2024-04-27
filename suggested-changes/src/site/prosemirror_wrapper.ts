@@ -4,7 +4,7 @@ import {
   TimestampMark,
   diffFormats,
   spanFromSlice,
-} from "list-formatting";
+} from "@list-positions/formatting";
 import {
   BunchMeta,
   List,

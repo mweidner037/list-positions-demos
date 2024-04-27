@@ -1,4 +1,4 @@
-import type {TimestampMark} from 'list-formatting';
+import type {TimestampMark} from '@list-positions/formatting';
 import type {BunchMeta, Position} from 'list-positions';
 import type {ReadTransaction} from 'replicache';
 

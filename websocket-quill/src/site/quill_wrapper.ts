@@ -1,7 +1,11 @@
 import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 
 // Quill CSS.
-import { FormattedValues, RichList, sliceFromSpan } from "list-formatting";
+import {
+  FormattedValues,
+  RichList,
+  sliceFromSpan,
+} from "@list-positions/formatting";
 import "quill/dist/quill.snow.css";
 import { Message, WelcomeMessage } from "../common/messages";
 

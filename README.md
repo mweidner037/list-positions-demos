@@ -1,6 +1,6 @@
 # List Demos
 
-Demos using the [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme) libraries.
+Demos using the [list-positions](https://github.com/mweidner037/list-positions#readme) and [@list-positions/formatting](https://github.com/mweidner037/list-positions-formatting#readme) libraries.
 
 Note: These demos are prototypes. I am working on "bindings" for specific rich-text editors which aim to be more thoroughly tested and to support additional features (e.g., embedded media).
 
