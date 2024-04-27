@@ -182,13 +182,17 @@ async function init() {
         }
       } else if (diffOp.key.startsWith('mark/')) {
         switch (diffOp.op) {
-          case 'add':
-            const op = diffOp as ExperimentalDiffOperationAdd<
+          case 'add': {
+            // ReadonlyJSONValue is supposed to express that the value is deep-readonly.
+            // Because of https://github.com/microsoft/TypeScript/issues/15300 , though,
+            // it doesn't work on JSON objects whose type is (or includes) an interface.
+            const op = diffOp as unknown as ExperimentalDiffOperationAdd<
               string,
               TimestampMark
             >;
             wrapperOps.push({type: 'marks', marks: [op.newValue]});
             break;
+          }
           default:
             console.error('Unexpected op on mark key:', diffOp.op, diffOp.key);
         }

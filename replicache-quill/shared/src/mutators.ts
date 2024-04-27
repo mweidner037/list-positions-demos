@@ -25,7 +25,7 @@
 // on how Replicache syncs and resolves conflicts, but understanding that is not
 // required to get up and running.
 
-import type {WriteTransaction} from 'replicache';
+import type {ReadonlyJSONValue, WriteTransaction} from 'replicache';
 import {
   idOfMark,
   type AddMarks,
@@ -90,7 +90,10 @@ export const mutators = {
         console.warn('addMarks: Skipping duplicate mark ID:', id);
         continue;
       }
-      await tx.set(`mark/${id}`, mark);
+      // ReadonlyJSONValue is supposed to express that the value is deep-readonly.
+      // Because of https://github.com/microsoft/TypeScript/issues/15300 , though,
+      // it doesn't work on JSON objects whose type is (or includes) an interface.
+      await tx.set(`mark/${id}`, mark as unknown as ReadonlyJSONValue);
     }
   },
 };

@@ -4,7 +4,7 @@
   "devDependencies": {
     "@rocicorp/eslint-config": "^0.1.2",
     "@rocicorp/prettier-config": "^0.1.1",
-    "typescript": "4.7.4"
+    "typescript": "^5.4.5"
   },
   "scripts": {
     "format": "npm run format --ws",
