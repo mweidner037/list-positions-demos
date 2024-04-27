@@ -130,7 +130,6 @@ export class Suggestion {
       1,
       { bunchID }
     );
-    console.log(beforePos, newMeta);
 
     // TODO: use dedicated meta message instead of this empty set.
     this.messages.push({
