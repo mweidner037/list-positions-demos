@@ -69,10 +69,9 @@ async function init() {
       }
     }
 
-    // Load all marks. They are not necessarily in compareMarks order,
-    // so call addMarks in a loop instead of load (TODO: subject to change).
+    // Load all marks.
     const marks = await allMarks(tx);
-    for (const mark of marks) richList.formatting.addMark(mark);
+    richList.formatting.load(marks);
   });
 
   const quillWrapper = new QuillWrapper(onLocalOps, richList);

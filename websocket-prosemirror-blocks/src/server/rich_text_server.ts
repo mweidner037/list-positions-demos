@@ -12,7 +12,6 @@ export class RichTextServer {
   private readonly text: List<string>;
   private readonly blockMarkers: List<BlockMarker>;
   // We don't need to inspect the formatting, so just store the marks directly.
-  // TODO: store in compareMarks order so we don't have to worry about it?
   private readonly marks: TimestampMark[];
 
   private clients = new Set<WebSocket>();

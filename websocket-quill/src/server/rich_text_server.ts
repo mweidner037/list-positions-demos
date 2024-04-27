@@ -10,8 +10,6 @@ export class RichTextServer {
   // text in a List.
   private readonly list: List<string>;
   // We don't need to inspect the formatting, so just store the marks directly.
-  // Note: these are in receipt order, *not* timestamp order.
-  // So you can't use them as a TimestampFormattingSavedState.
   private readonly marks: TimestampMark[];
 
   private clients = new Set<WebSocket>();
@@ -59,7 +57,7 @@ export class RichTextServer {
       type: "welcome",
       order: this.list.order.save(),
       list: this.list.save(),
-      marks: this.marks,
+      formatting: this.marks,
     });
 
     this.clients.add(ws);

@@ -38,8 +38,7 @@ export class QuillWrapper {
     // Load initial state into richList.
     this.richList.order.load(welcome.order);
     this.richList.list.load(welcome.list);
-    // welcome.marks is not a saved state; add directly.
-    for (const mark of welcome.marks) this.richList.formatting.addMark(mark);
+    this.richList.formatting.load(welcome.formatting);
 
     // Sync initial state to Quill.
     this.editor.updateContents(

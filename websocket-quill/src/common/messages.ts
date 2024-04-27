@@ -1,4 +1,7 @@
-import { TimestampMark } from "@list-positions/formatting";
+import {
+  TimestampFormattingSavedState,
+  TimestampMark,
+} from "@list-positions/formatting";
 import {
   BunchMeta,
   ListSavedState,
@@ -27,9 +30,7 @@ export type WelcomeMessage = {
   type: "welcome";
   order: OrderSavedState;
   list: ListSavedState<string>;
-  // Note: these are in receipt order, *not* timestamp order.
-  // So you can't use them as a TimestampFormattingSavedState.
-  marks: TimestampMark[];
+  formatting: TimestampFormattingSavedState;
 };
 
 export type Message = SetMessage | DeleteMessage | MarkMessage | WelcomeMessage;

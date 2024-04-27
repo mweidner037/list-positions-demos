@@ -52,8 +52,6 @@ export class QuillWrapper {
     readonly onLocalOps: (ops: WrapperOp[]) => void,
     /**
      * Must end in "\n" to match Quill, even if otherwise empty.
-     *
-     * Okay if marks are not in compareMarks order (weaker than RichListSavedState reqs).
      */
     initialState: RichListSavedState<string>
   ) {
@@ -77,12 +75,7 @@ export class QuillWrapper {
     });
 
     // Load initial state into richList.
-    this.richList.order.load(initialState.order);
-    this.richList.list.load(initialState.list);
-    // initialState.marks is not a saved state; add directly.
-    for (const mark of initialState.formatting) {
-      this.richList.formatting.addMark(mark);
-    }
+    this.richList.load(initialState);
     if (
       this.richList.list.length === 0 ||
       this.richList.list.getAt(this.richList.list.length - 1) !== "\n"
