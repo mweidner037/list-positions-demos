@@ -1,4 +1,4 @@
-import {TimestampMark} from 'list-formatting';
+import {TimestampMark} from '@list-positions/formatting';
 import {
   ExperimentalDiffOperationAdd,
   ExperimentalDiffOperationChange,
@@ -55,27 +55,26 @@ async function init() {
 
   // Load initial state from Replicache.
 
-  const richList = QuillWrapper.newRichList();
+  const richText = QuillWrapper.newRichText();
   await r.query(async tx => {
     const bunches = await allBunches(tx);
     // First need to load all metas together, to avoid dependency ordering concerns.
-    richList.order.addMetas(bunches.map(bunch => bunch.meta));
+    richText.order.addMetas(bunches.map(bunch => bunch.meta));
     // Now load all values.
     for (const bunch of bunches) {
       // TODO: In list-positions, provide method to set a whole bunch's values quickly.
       for (const [indexStr, char] of Object.entries(bunch.values)) {
         const innerIndex = Number.parseInt(indexStr);
-        richList.list.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
+        richText.text.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
       }
     }
 
-    // Load all marks. They are not necessarily in compareMarks order,
-    // so call addMarks in a loop instead of load (TODO: subject to change).
+    // Load all marks.
     const marks = await allMarks(tx);
-    for (const mark of marks) richList.formatting.addMark(mark);
+    richText.formatting.load(marks);
   });
 
-  const quillWrapper = new QuillWrapper(onLocalOps, richList);
+  const quillWrapper = new QuillWrapper(onLocalOps, richText);
 
   // Send future Quill changes to Replicache.
   // Use a queue to avoid reordered mutations (since onLocalOps is sync
@@ -183,13 +182,17 @@ async function init() {
         }
       } else if (diffOp.key.startsWith('mark/')) {
         switch (diffOp.op) {
-          case 'add':
-            const op = diffOp as ExperimentalDiffOperationAdd<
+          case 'add': {
+            // ReadonlyJSONValue is supposed to express that the value is deep-readonly.
+            // Because of https://github.com/microsoft/TypeScript/issues/15300 , though,
+            // it doesn't work on JSON objects whose type is (or includes) an interface.
+            const op = diffOp as unknown as ExperimentalDiffOperationAdd<
               string,
               TimestampMark
             >;
             wrapperOps.push({type: 'marks', marks: [op.newValue]});
             break;
+          }
           default:
             console.error('Unexpected op on mark key:', diffOp.op, diffOp.key);
         }

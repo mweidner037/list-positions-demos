@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useLiveQuery } from "electric-sql/react";
-import { TimestampMark } from "list-formatting";
+import { TimestampMark } from "@list-positions/formatting";
 import { BunchMeta, Position, expandPositions } from "list-positions";
 import { useElectric } from "../Loader";
 import { QuillWrapper, WrapperOp } from "./quill_wrapper";

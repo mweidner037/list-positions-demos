@@ -1,4 +1,4 @@
-import { TimestampFormatting } from "list-formatting";
+import { TimestampFormatting } from "@list-positions/formatting";
 import {
   List,
   MAX_POSITION,
@@ -130,7 +130,6 @@ export class Suggestion {
       1,
       { bunchID }
     );
-    console.log(beforePos, newMeta);
 
     // TODO: use dedicated meta message instead of this empty set.
     this.messages.push({

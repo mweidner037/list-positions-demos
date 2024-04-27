@@ -1,6 +1,6 @@
 # Triplit-Quill
 
-Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [Triplit](https://www.triplit.dev/) fullstack database, and [Quill](https://quilljs.com/).
+Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [@list-positions/formatting](https://github.com/mweidner037/list-positions-formatting#readme), the [Triplit](https://www.triplit.dev/) fullstack database, and [Quill](https://quilljs.com/).
 
 The editor state is stored in a Triplit database with three tables:
 

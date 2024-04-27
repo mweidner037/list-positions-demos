@@ -1,8 +1,8 @@
-# List Demos
+# list-positions Demos
 
-Demos using the [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme) libraries.
+Demos using the [list-positions](https://github.com/mweidner037/list-positions#readme) library and its companion library ([@list-positions/formatting](https://github.com/mweidner037/list-positions-formatting#readme).) <!-- TODO: add more as they are created -->
 
-Note: These demos are prototypes. I am working on "bindings" for specific rich-text editors which aim to be more thoroughly tested and to support additional features (e.g., embedded media).
+Note: These demos are prototypes. I am working on "bindings" for specific rich-text editors, which aim to be more thoroughly tested and to support additional features (e.g., embedded media).
 
 - [`websocket-quill/`](./websocket-quill#readme): Basic collaborative rich-text editor using a WebSocket server and Quill.
 - [`websocket-prosemirror-log/`](./websocket-prosemirror-log#readme): Basic collaborative rich-text editor using a WebSocket server and ProseMirror, with support for arbitrary schemas, using a log of mutations.

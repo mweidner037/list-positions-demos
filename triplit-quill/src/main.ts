@@ -1,5 +1,5 @@
 import { ClientFetchResult, TriplitClient } from "@triplit/client";
-import { RichList } from "list-formatting";
+import { RichText } from "@list-positions/formatting";
 import {
   MAX_POSITION,
   MIN_POSITION,
@@ -180,13 +180,13 @@ async function sendLocalOps() {
  * "\n", to match Quill's initial state.
  */
 function makeInitialState() {
-  const richList = new RichList<string>();
+  const richText = new RichText();
   // Use the same bunchID & BunchMeta on all replicas.
-  const [pos] = richList.order.createPositions(MIN_POSITION, MAX_POSITION, 1, {
+  const [pos] = richText.order.createPositions(MIN_POSITION, MAX_POSITION, 1, {
     bunchID: "INIT",
   });
-  richList.list.set(pos, "\n");
-  return richList.save();
+  richText.text.set(pos, "\n");
+  return richText.save();
 }
 
 function idOfPos(pos: Position): string {

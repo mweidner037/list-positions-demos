@@ -1,4 +1,4 @@
-import { TimestampMark } from "list-formatting";
+import { TimestampMark } from "@list-positions/formatting";
 import { BunchMeta, Position } from "list-positions";
 import { BlockMarker, BlockTextSavedState } from "./block_text";
 

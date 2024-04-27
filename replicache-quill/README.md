@@ -1,11 +1,11 @@
 # Replicache-Quill
 
-Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [list-formatting](https://github.com/mweidner037/list-formatting#readme), the [Replicache](https://replicache.dev/) client-side sync framework, and [Quill](https://quilljs.com/).
+Basic collaborative rich-text editor using [list-positions](https://github.com/mweidner037/list-positions#readme) and [@list-positions/formatting](https://github.com/mweidner037/list-positions-formatting#readme), the [Replicache](https://replicache.dev/) client-side sync framework, and [Quill](https://quilljs.com/).
 
 The editor state is stored in Replicache under two prefixes:
 
 - `bunch/<bunchID>` for the `List` state, grouped by bunch. Each entry corresponds to a [bunch](https://github.com/mweidner037/list-positions#bunches) from list-positions. It stores the bunch's [BunchMeta](https://github.com/mweidner037/list-positions#managing-metadata) fields, plus its current values (chars) as an object `{ [innerIndex: number]: string }`.
-- `mark/<mark ID>` for the formatting marks. Each entry stores a [TimestampMark](https://github.com/mweidner037/list-formatting#class-timestampformatting) from list-formatting, keyed by an arbitrary unique ID.
+- `mark/<mark ID>` for the formatting marks. Each entry stores a [TimestampMark](https://github.com/mweidner037/list-positions-formatting#class-timestampformatting) from @list-positions/formatting, keyed by an arbitrary unique ID.
 
 Replicache mutators correspond to the basic rich-text operations:
 
