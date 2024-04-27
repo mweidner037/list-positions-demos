@@ -55,26 +55,26 @@ async function init() {
 
   // Load initial state from Replicache.
 
-  const richList = QuillWrapper.newRichList();
+  const richText = QuillWrapper.newRichText();
   await r.query(async tx => {
     const bunches = await allBunches(tx);
     // First need to load all metas together, to avoid dependency ordering concerns.
-    richList.order.addMetas(bunches.map(bunch => bunch.meta));
+    richText.order.addMetas(bunches.map(bunch => bunch.meta));
     // Now load all values.
     for (const bunch of bunches) {
       // TODO: In list-positions, provide method to set a whole bunch's values quickly.
       for (const [indexStr, char] of Object.entries(bunch.values)) {
         const innerIndex = Number.parseInt(indexStr);
-        richList.list.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
+        richText.list.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
       }
     }
 
     // Load all marks.
     const marks = await allMarks(tx);
-    richList.formatting.load(marks);
+    richText.formatting.load(marks);
   });
 
-  const quillWrapper = new QuillWrapper(onLocalOps, richList);
+  const quillWrapper = new QuillWrapper(onLocalOps, richText);
 
   // Send future Quill changes to Replicache.
   // Use a queue to avoid reordered mutations (since onLocalOps is sync

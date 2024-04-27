@@ -3,7 +3,7 @@ import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 // Quill CSS.
 import {
   FormattedValues,
-  RichList,
+  RichText,
   sliceFromSpan,
 } from "@list-positions/formatting";
 import "quill/dist/quill.snow.css";
@@ -13,10 +13,10 @@ const Delta: typeof DeltaType = Quill.import("delta");
 
 export class QuillWrapper {
   readonly editor: Quill;
-  readonly richList: RichList<string>;
+  readonly richText: RichText<string>;
 
   constructor(readonly ws: WebSocket, welcome: WelcomeMessage) {
-    this.richList = new RichList({ expandRules });
+    this.richText = new RichText({ expandRules });
 
     // Setup Quill.
     const editorContainer = document.getElementById("editor") as HTMLDivElement;
@@ -35,18 +35,18 @@ export class QuillWrapper {
       formats: ["bold", "italic", "header", "list"],
     });
 
-    // Load initial state into richList.
-    this.richList.order.load(welcome.order);
-    this.richList.list.load(welcome.list);
-    this.richList.formatting.load(welcome.formatting);
+    // Load initial state into richText.
+    this.richText.order.load(welcome.order);
+    this.richText.list.load(welcome.list);
+    this.richText.formatting.load(welcome.formatting);
 
     // Sync initial state to Quill.
     this.editor.updateContents(
-      deltaFromSlices(this.richList.formattedValues())
+      deltaFromSlices(this.richText.formattedValues())
     );
     // Delete Quill's own initial "\n" - the server's state already contains one.
     this.editor.updateContents(
-      new Delta().retain(this.richList.list.length).delete(1)
+      new Delta().retain(this.richText.list.length).delete(1)
     );
 
     // Sync Quill changes to our local state and to the server.
@@ -64,7 +64,7 @@ export class QuillWrapper {
               [...Object.entries(quillAttrs)].map(quillAttrToFormatting)
             );
             const [startPos, createdBunch, createdMarks] =
-              this.richList.insertWithFormat(
+              this.richText.insertWithFormat(
                 op.index,
                 formattingAttrs,
                 ...op.insert
@@ -89,10 +89,10 @@ export class QuillWrapper {
         // Deletion
         else if (op.delete) {
           const toDelete = [
-            ...this.richList.list.positions(op.index, op.index + op.delete),
+            ...this.richText.list.positions(op.index, op.index + op.delete),
           ];
           for (const pos of toDelete) {
-            this.richList.list.delete(pos);
+            this.richText.list.delete(pos);
             this.send({
               type: "delete",
               pos,
@@ -103,7 +103,7 @@ export class QuillWrapper {
         else if (op.attributes && op.retain) {
           for (const [quillKey, quillValue] of Object.entries(op.attributes)) {
             const [key, value] = quillAttrToFormatting([quillKey, quillValue]);
-            const [mark] = this.richList.format(
+            const [mark] = this.richText.format(
               op.index,
               op.index + op.retain,
               key,
@@ -126,14 +126,14 @@ export class QuillWrapper {
         switch (msg.type) {
           case "set":
             if (msg.meta) {
-              this.richList.order.addMetas([msg.meta]);
+              this.richText.order.addMetas([msg.meta]);
             }
             // Sets are always nontrivial.
             // Because the server enforces causal ordering, bunched values
             // are always still contiguous and have a single format.
-            this.richList.list.set(msg.startPos, ...msg.chars);
-            const startIndex = this.richList.list.indexOfPosition(msg.startPos);
-            const format = this.richList.formatting.getFormat(msg.startPos);
+            this.richText.list.set(msg.startPos, ...msg.chars);
+            const startIndex = this.richText.list.indexOfPosition(msg.startPos);
+            const format = this.richText.formatting.getFormat(msg.startPos);
             this.editor.updateContents(
               new Delta()
                 .retain(startIndex)
@@ -141,17 +141,17 @@ export class QuillWrapper {
             );
             break;
           case "delete":
-            if (this.richList.list.has(msg.pos)) {
-              const index = this.richList.list.indexOfPosition(msg.pos);
-              this.richList.list.delete(msg.pos);
+            if (this.richText.list.has(msg.pos)) {
+              const index = this.richText.list.indexOfPosition(msg.pos);
+              this.richText.list.delete(msg.pos);
               this.editor.updateContents(new Delta().retain(index).delete(1));
             }
             break;
           case "mark":
-            const changes = this.richList.formatting.addMark(msg.mark);
+            const changes = this.richText.formatting.addMark(msg.mark);
             for (const change of changes) {
               const { startIndex, endIndex } = sliceFromSpan(
-                this.richList.list,
+                this.richText.list,
                 change.start,
                 change.end
               );
