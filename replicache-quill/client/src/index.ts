@@ -65,7 +65,7 @@ async function init() {
       // TODO: In list-positions, provide method to set a whole bunch's values quickly.
       for (const [indexStr, char] of Object.entries(bunch.values)) {
         const innerIndex = Number.parseInt(indexStr);
-        richText.list.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
+        richText.text.set({bunchID: bunch.meta.bunchID, innerIndex}, char);
       }
     }
 

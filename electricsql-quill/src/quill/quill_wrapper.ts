@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  FormattedValues,
+  FormattedChars,
   RichText,
   RichTextSavedState,
   TimestampMark,
@@ -50,7 +50,7 @@ export class QuillWrapper {
   /**
    * Instead of editing this directly, use the applyOps method.
    */
-  readonly richText: RichText<string>;
+  readonly richText: RichText;
 
   private ourChange = false;
 
@@ -67,7 +67,7 @@ export class QuillWrapper {
     /**
      * Must end in "\n" to match Quill, even if otherwise empty.
      */
-    initialState: RichTextSavedState<string>,
+    initialState: RichTextSavedState,
     order?: Order
   ) {
     this.richText = new RichText({ expandRules, order });
@@ -113,7 +113,7 @@ export class QuillWrapper {
             this.richText.insertWithFormat(
               deltaOp.index,
               formattingAttrs,
-              ...deltaOp.insert
+              deltaOp.insert
             );
           if (createdBunch) {
             // Push meta op first to avoid missing BunchMeta deps.
@@ -131,13 +131,13 @@ export class QuillWrapper {
       // Deletion
       else if (deltaOp.delete) {
         const toDelete = [
-          ...this.richText.list.positions(
+          ...this.richText.text.positions(
             deltaOp.index,
             deltaOp.index + deltaOp.delete
           ),
         ];
         for (const pos of toDelete) {
-          this.richText.list.delete(pos);
+          this.richText.text.delete(pos);
           wrapperOps.push({
             type: "delete",
             startPos: pos,
@@ -198,9 +198,9 @@ export class QuillWrapper {
             for (let i = 0; i < poss.length; i++) {
               const pos = poss[i];
               const char = op.chars[i];
-              if (!this.richText.list.has(pos)) {
-                this.richText.list.set(pos, char);
-                const index = this.richText.list.indexOfPosition(pos);
+              if (!this.richText.text.has(pos)) {
+                this.richText.text.set(pos, char);
+                const index = this.richText.text.indexOfPosition(pos);
                 const format = this.richText.formatting.getFormat(pos);
                 pendingDelta = pendingDelta.compose(
                   new Delta()
@@ -214,9 +214,9 @@ export class QuillWrapper {
           case "delete":
             // OPT: Apply these in bulk if possible (common case of causally ordered ops).
             for (const pos of expandPositions(op.startPos, op.count ?? 1)) {
-              if (this.richText.list.has(pos)) {
-                const index = this.richText.list.indexOfPosition(pos);
-                this.richText.list.delete(pos);
+              if (this.richText.text.has(pos)) {
+                const index = this.richText.text.indexOfPosition(pos);
+                this.richText.text.delete(pos);
                 pendingDelta = pendingDelta.compose(
                   new Delta().retain(index).delete(1)
                 );
@@ -228,7 +228,7 @@ export class QuillWrapper {
               const changes = this.richText.formatting.addMark(mark);
               for (const change of changes) {
                 const { startIndex, endIndex } = sliceFromSpan(
-                  this.richText.list,
+                  this.richText.text,
                   change.start,
                   change.end
                 );
@@ -266,7 +266,7 @@ export class QuillWrapper {
    *
    * Note: Order is not cleared, just appended.
    */
-  load(savedState: RichTextSavedState<string>): void {
+  load(savedState: RichTextSavedState): void {
     this.ourChange = true;
     try {
       // Clear existing state.
@@ -276,19 +276,19 @@ export class QuillWrapper {
       // Load savedState into richText.
       this.richText.load(savedState);
       if (
-        this.richText.list.length === 0 ||
-        this.richText.list.getAt(this.richText.list.length - 1) !== "\n"
+        this.richText.text.length === 0 ||
+        this.richText.text.getAt(this.richText.text.length - 1) !== "\n"
       ) {
         throw new Error('Bad saved state: must end in "\n" to match Quill');
       }
 
       // Sync savedState to Quill.
       this.editor.updateContents(
-        deltaFromSlices(this.richText.formattedValues())
+        deltaFromSlices(this.richText.formattedChars())
       );
       // Delete Quill's own initial "\n" - the savedState is supposed to end with one.
       this.editor.updateContents(
-        new Delta().retain(this.richText.list.length).delete(1)
+        new Delta().retain(this.richText.text.length).delete(1)
       );
     } finally {
       this.ourChange = false;
@@ -300,8 +300,8 @@ export class QuillWrapper {
     return quillSel === null
       ? null
       : {
-          start: this.richText.list.cursorAt(quillSel.index),
-          end: this.richText.list.cursorAt(quillSel.index + quillSel.length),
+          start: this.richText.text.cursorAt(quillSel.index),
+          end: this.richText.text.cursorAt(quillSel.index + quillSel.length),
         };
   }
 
@@ -311,8 +311,8 @@ export class QuillWrapper {
       this.editor.setSelection(0, 0);
       this.editor.blur();
     } else {
-      const startIndex = this.richText.list.indexOfCursor(sel.start);
-      const endIndex = this.richText.list.indexOfCursor(sel.end);
+      const startIndex = this.richText.text.indexOfCursor(sel.start);
+      const endIndex = this.richText.text.indexOfCursor(sel.end);
       this.editor.setSelection({
         index: startIndex,
         length: endIndex - startIndex,
@@ -329,14 +329,14 @@ export class QuillWrapper {
    * "\n", to match Quill's initial state.
    */
   static makeInitialState() {
-    const richText = new RichText<string>();
+    const richText = new RichText();
     const [pos] = richText.order.createPositions(
       MIN_POSITION,
       MAX_POSITION,
       1,
       { bunchID: "INIT" }
     );
-    richText.list.set(pos, "\n");
+    richText.text.set(pos, "\n");
     return richText.save();
   }
 }
@@ -401,13 +401,10 @@ function getRelevantDeltaOperations(delta: DeltaStatic): {
   return relevantOps;
 }
 
-function deltaFromSlices(slices: FormattedValues<string>[]) {
+function deltaFromSlices(slices: FormattedChars[]) {
   let delta = new Delta();
-  for (const values of slices) {
-    delta = delta.insert(
-      values.values.join(""),
-      formattingToQuillAttr(values.format)
-    );
+  for (const slice of slices) {
+    delta = delta.insert(slice.chars, formattingToQuillAttr(slice.format));
   }
   return delta;
 }

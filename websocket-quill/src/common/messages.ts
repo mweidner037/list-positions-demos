@@ -4,9 +4,9 @@ import {
 } from "@list-positions/formatting";
 import {
   BunchMeta,
-  ListSavedState,
   OrderSavedState,
   Position,
+  TextSavedState,
 } from "list-positions";
 
 export type SetMessage = {
@@ -29,7 +29,7 @@ export type MarkMessage = {
 export type WelcomeMessage = {
   type: "welcome";
   order: OrderSavedState;
-  list: ListSavedState<string>;
+  text: TextSavedState;
   formatting: TimestampFormattingSavedState;
 };
 

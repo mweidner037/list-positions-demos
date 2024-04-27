@@ -180,12 +180,12 @@ async function sendLocalOps() {
  * "\n", to match Quill's initial state.
  */
 function makeInitialState() {
-  const richText = new RichText<string>();
+  const richText = new RichText();
   // Use the same bunchID & BunchMeta on all replicas.
   const [pos] = richText.order.createPositions(MIN_POSITION, MAX_POSITION, 1, {
     bunchID: "INIT",
   });
-  richText.list.set(pos, "\n");
+  richText.text.set(pos, "\n");
   return richText.save();
 }
 

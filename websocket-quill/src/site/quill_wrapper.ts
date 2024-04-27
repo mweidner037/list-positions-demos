@@ -2,7 +2,7 @@ import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
 
 // Quill CSS.
 import {
-  FormattedValues,
+  FormattedChars,
   RichText,
   sliceFromSpan,
 } from "@list-positions/formatting";
@@ -13,7 +13,7 @@ const Delta: typeof DeltaType = Quill.import("delta");
 
 export class QuillWrapper {
   readonly editor: Quill;
-  readonly richText: RichText<string>;
+  readonly richText: RichText;
 
   constructor(readonly ws: WebSocket, welcome: WelcomeMessage) {
     this.richText = new RichText({ expandRules });
@@ -37,16 +37,14 @@ export class QuillWrapper {
 
     // Load initial state into richText.
     this.richText.order.load(welcome.order);
-    this.richText.list.load(welcome.list);
+    this.richText.text.load(welcome.text);
     this.richText.formatting.load(welcome.formatting);
 
     // Sync initial state to Quill.
-    this.editor.updateContents(
-      deltaFromSlices(this.richText.formattedValues())
-    );
+    this.editor.updateContents(deltaFromSlices(this.richText.formattedChars()));
     // Delete Quill's own initial "\n" - the server's state already contains one.
     this.editor.updateContents(
-      new Delta().retain(this.richText.list.length).delete(1)
+      new Delta().retain(this.richText.text.length).delete(1)
     );
 
     // Sync Quill changes to our local state and to the server.
@@ -67,7 +65,7 @@ export class QuillWrapper {
               this.richText.insertWithFormat(
                 op.index,
                 formattingAttrs,
-                ...op.insert
+                op.insert
               );
             this.send({
               type: "set",
@@ -89,10 +87,10 @@ export class QuillWrapper {
         // Deletion
         else if (op.delete) {
           const toDelete = [
-            ...this.richText.list.positions(op.index, op.index + op.delete),
+            ...this.richText.text.positions(op.index, op.index + op.delete),
           ];
           for (const pos of toDelete) {
-            this.richText.list.delete(pos);
+            this.richText.text.delete(pos);
             this.send({
               type: "delete",
               pos,
@@ -131,8 +129,8 @@ export class QuillWrapper {
             // Sets are always nontrivial.
             // Because the server enforces causal ordering, bunched values
             // are always still contiguous and have a single format.
-            this.richText.list.set(msg.startPos, ...msg.chars);
-            const startIndex = this.richText.list.indexOfPosition(msg.startPos);
+            this.richText.text.set(msg.startPos, msg.chars);
+            const startIndex = this.richText.text.indexOfPosition(msg.startPos);
             const format = this.richText.formatting.getFormat(msg.startPos);
             this.editor.updateContents(
               new Delta()
@@ -141,9 +139,9 @@ export class QuillWrapper {
             );
             break;
           case "delete":
-            if (this.richText.list.has(msg.pos)) {
-              const index = this.richText.list.indexOfPosition(msg.pos);
-              this.richText.list.delete(msg.pos);
+            if (this.richText.text.has(msg.pos)) {
+              const index = this.richText.text.indexOfPosition(msg.pos);
+              this.richText.text.delete(msg.pos);
               this.editor.updateContents(new Delta().retain(index).delete(1));
             }
             break;
@@ -151,7 +149,7 @@ export class QuillWrapper {
             const changes = this.richText.formatting.addMark(msg.mark);
             for (const change of changes) {
               const { startIndex, endIndex } = sliceFromSpan(
-                this.richText.list,
+                this.richText.text,
                 change.start,
                 change.end
               );
@@ -241,13 +239,10 @@ function getRelevantDeltaOperations(delta: DeltaStatic): {
   return relevantOps;
 }
 
-function deltaFromSlices(slices: FormattedValues<string>[]) {
+function deltaFromSlices(slices: FormattedChars[]) {
   let delta = new Delta();
-  for (const values of slices) {
-    delta = delta.insert(
-      values.values.join(""),
-      formattingToQuillAttr(values.format)
-    );
+  for (const slice of slices) {
+    delta = delta.insert(slice.chars, formattingToQuillAttr(slice.format));
   }
   return delta;
 }

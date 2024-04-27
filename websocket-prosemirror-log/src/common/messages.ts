@@ -12,4 +12,3 @@ export type WelcomeMessage = {
 };
 
 export type Message = MutationMessage | WelcomeMessage;
-
