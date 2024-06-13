@@ -240,7 +240,7 @@ function getRelevantDeltaOperations(delta: Delta): ModifiedDeltaOperation[] {
       else index += 1; // Embed
     } else if (op.retain !== undefined) {
       if (typeof op.retain === "number") index += op.retain;
-      else index += 1; // Embed
+      // Embed, do not increment index
     }
     // Deletes don't add to the index because we'll do the
     // next operation after them, hence the text will already
