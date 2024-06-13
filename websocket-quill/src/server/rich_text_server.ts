@@ -35,7 +35,7 @@ export class RichTextServer {
   }
 
   private sendMessage(ws: WebSocket, msg: Message) {
-    if (ws.readyState == WebSocket.OPEN) {
+    if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
     }
   }
@@ -43,7 +43,7 @@ export class RichTextServer {
   private echo(origin: WebSocket, data: string) {
     for (const ws of this.clients) {
       if (ws === origin) continue;
-      if (ws.readyState == WebSocket.OPEN) {
+      if (ws.readyState === WebSocket.OPEN) {
         ws.send(data);
       }
     }
