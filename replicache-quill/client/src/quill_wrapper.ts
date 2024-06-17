@@ -1,5 +1,5 @@
-import Quill from "quill";
-import { Delta } from "quill/core";
+import Quill from 'quill';
+import {Delta} from 'quill/core';
 
 import {
   FormattedChars,
@@ -342,15 +342,15 @@ function getRelevantDeltaOperations(delta: Delta): ModifiedDeltaOperation[] {
         insert: op.insert,
         delete: op.delete,
         attributes: op.attributes,
-        retain: typeof op.retain === "number" ? op.retain : undefined,
+        retain: typeof op.retain === 'number' ? op.retain : undefined,
       });
     }
     // Adjust index for the next op.
     if (op.insert !== undefined) {
-      if (typeof op.insert === "string") index += op.insert.length;
+      if (typeof op.insert === 'string') index += op.insert.length;
       else index += 1; // Embed
     } else if (op.retain !== undefined) {
-      if (typeof op.retain === "number") index += op.retain;
+      if (typeof op.retain === 'number') index += op.retain;
       // Embed, do not increment index
     }
     // Deletes don't add to the index because we'll do the
@@ -363,10 +363,7 @@ function getRelevantDeltaOperations(delta: Delta): ModifiedDeltaOperation[] {
 function deltaFromSlices(slices: FormattedChars[]) {
   let delta = new Delta();
   for (const slice of slices) {
-    delta = delta.insert(
-      slice.chars,
-      formattingToQuillAttr(slice.format),
-    );
+    delta = delta.insert(slice.chars, formattingToQuillAttr(slice.format));
   }
   return delta;
 }

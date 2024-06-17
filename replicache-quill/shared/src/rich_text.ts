@@ -35,5 +35,8 @@ export async function allMarks(tx: ReadTransaction): Promise<TimestampMark[]> {
   // ReadonlyJSONValue is supposed to express that the value is deep-readonly.
   // Because of https://github.com/microsoft/TypeScript/issues/15300 , though,
   // it doesn't work on JSON objects whose type is (or includes) an interface.
-  return await tx.scan({prefix: 'mark/'}).values().toArray() as unknown as TimestampMark[];
+  return (await tx
+    .scan({prefix: 'mark/'})
+    .values()
+    .toArray()) as unknown as TimestampMark[];
 }

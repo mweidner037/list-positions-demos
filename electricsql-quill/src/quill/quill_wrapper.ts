@@ -186,7 +186,7 @@ export class QuillWrapper {
       this.richText.order.addMetas(allMetas);
 
       // Process the non-"metas" ops.
-      let pendingDelta: DeltaStatic = new Delta();
+      let pendingDelta = new Delta();
       for (const op of wrapperOps) {
         switch (op.type) {
           case "metas":
