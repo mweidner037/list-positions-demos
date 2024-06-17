@@ -1,15 +1,14 @@
-import Quill, { DeltaStatic, Delta as DeltaType } from "quill";
+import Quill from "quill";
 
 // Quill CSS.
 import {
-  FormattedChars,
+  type FormattedChars,
   RichText,
   sliceFromSpan,
 } from "@list-positions/formatting";
 import "quill/dist/quill.snow.css";
-import { Message, WelcomeMessage } from "../common/messages";
-
-const Delta: typeof DeltaType = Quill.import("delta");
+import type { Message, WelcomeMessage } from "../common/messages";
+import { Delta } from "quill/core";
 
 export class QuillWrapper {
   readonly editor: Quill;
@@ -173,7 +172,7 @@ export class QuillWrapper {
   }
 
   private send(msg: Message) {
-    if (this.ws.readyState == WebSocket.OPEN) {
+    if (this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
   }
@@ -208,30 +207,41 @@ function expandRules(
   }
 }
 
-/**
- * Convert delta.ops into an array of modified DeltaOperations
- * having the form { index: first char index, ...DeltaOperation },
- * leaving out ops that do nothing.
- */
-function getRelevantDeltaOperations(delta: DeltaStatic): {
+type ModifiedDeltaOperation = {
   index: number;
   insert?: string | object;
   delete?: number;
   attributes?: Record<string, any>;
   retain?: number;
-}[] {
+};
+
+/**
+ * Convert delta.ops into an array of modified DeltaOperations
+ * having the form { index: first char index, ...DeltaOperation },
+ * leaving out ops that do nothing.
+ */
+function getRelevantDeltaOperations(delta: Delta): ModifiedDeltaOperation[] {
   if (delta.ops === undefined) return [];
-  const relevantOps = [];
+  const relevantOps: ModifiedDeltaOperation[] = [];
   let index = 0;
   for (const op of delta.ops) {
     if (op.retain === undefined || op.attributes) {
-      relevantOps.push({ index, ...op });
+      relevantOps.push({
+        index,
+        insert: op.insert,
+        delete: op.delete,
+        attributes: op.attributes,
+        retain: typeof op.retain === "number" ? op.retain : undefined,
+      });
     }
     // Adjust index for the next op.
     if (op.insert !== undefined) {
       if (typeof op.insert === "string") index += op.insert.length;
       else index += 1; // Embed
-    } else if (op.retain !== undefined) index += op.retain;
+    } else if (op.retain !== undefined) {
+      if (typeof op.retain === "number") index += op.retain;
+      // Embed, do not increment index
+    }
     // Deletes don't add to the index because we'll do the
     // next operation after them, hence the text will already
     // be shifted left.
